@@ -1,11 +1,27 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
+import { WebSocket, WebSocketServer } from 'ws';
+import type { Express } from 'express';
 import apiRoutes from './routes/api.routes.js';
 import { db, runMigrations } from './db.js';
+import { storage } from './storage/index.js';
+
+// Extend Express types
+declare global {
+  namespace Express {
+    interface Application {
+      broadcastResponse: (offerId: number, response: any) => Promise<void>;
+      broadcastStatusUpdate: (offerId: number, responseId: number, status: string) => Promise<void>;
+    }
+  }
+}
 
 // Inicializar la aplicación Express
-const app = express();
+const app = express() as Express;
+const httpServer = createServer(app);
+const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
 // Configuración de CORS
 const allowedOrigins: string[] = [
@@ -18,6 +34,118 @@ const allowedOrigins: string[] = [
 if (process.env.FRONTEND_URL) {
   allowedOrigins.push(process.env.FRONTEND_URL);
 }
+
+const offerConnections = new Map<number, Set<WebSocket>>();
+
+wss.on('connection', (ws, req) => {
+  console.log('WebSocket connection established');
+  
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      
+      if (data.type === 'subscribe' && data.offerId) {
+        const offerId = parseInt(data.offerId);
+        
+        if (!offerConnections.has(offerId)) {
+          offerConnections.set(offerId, new Set());
+        }
+        
+        offerConnections.get(offerId)!.add(ws);
+        console.log(`Client subscribed to offer ${offerId}`);
+        
+        ws.send(JSON.stringify({
+          type: 'subscribed',
+          offerId: offerId
+        }));
+      }
+    } catch (error) {
+      console.error('Error processing WebSocket message:', error);
+    }
+  });
+  
+  ws.on('close', () => {
+    offerConnections.forEach((connections, offerId) => {
+      connections.delete(ws);
+      if (connections.size === 0) {
+        offerConnections.delete(offerId);
+      }
+    });
+    console.log('WebSocket connection closed');
+  });
+  
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+  });
+});
+
+// Add broadcast functions to app
+app.broadcastResponse = async (offerId: number, response: any) => {
+  const connections = offerConnections.get(offerId);
+  if (connections) {
+    try {
+      // Obtener información del artista usando el storage
+      const artist = await storage.artistStorage.getArtist(response.artistId);
+      
+      if (!artist) {
+        console.error(`No se encontró el artista con ID: ${response.artistId}`);
+        return;
+      }
+      
+      // Extraer solo los campos necesarios del artista
+      const artistData = {
+        id: artist.id,
+        artistName: artist.artistName,
+        userId: artist.userId,
+        // Incluir otros campos necesarios del artista
+      };
+      
+      // Crear el mensaje con la información del artista
+      const message = JSON.stringify({
+        type: 'newResponse',
+        offerId: offerId,
+        response: {
+          ...response,
+          artist: artistData
+        }
+      });
+      
+      // Enviar el mensaje a todos los clientes conectados
+      connections.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(message);
+        }
+      });
+    } catch (error) {
+      console.error('Error al obtener información del artista:', error);
+    }
+  }
+};
+
+app.broadcastStatusUpdate = async (offerId: number, responseId: number, status: string) => {
+  const connections = offerConnections.get(offerId);
+  if (connections) {
+    try {
+      // Crear el mensaje de actualización de estado
+      const message = JSON.stringify({
+        type: 'statusUpdate',
+        offerId: offerId,
+        responseId: responseId,
+        status: status,
+        timestamp: new Date().toISOString()
+      });
+      
+      // Enviar el mensaje a todos los clientes conectados
+      connections.forEach(ws => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(message);
+        }
+      });
+    } catch (error) {
+      console.error('Error al enviar actualización de estado:', error);
+    }
+  }
+};
 
 // Configuración de middleware
 app.use(cors({
@@ -93,18 +221,20 @@ app.get('/health', async (req, res) => {
 
 // Iniciar el servidor
 const PORT = process.env.PORT || 5001;
-
-const server = app.listen(PORT, () => {
+httpServer.listen(Number(PORT), '0.0.0.0', async () => {
   console.log(`✅ Servidor iniciado en el puerto ${PORT}`);
   console.log(`📚 API disponible en http://localhost:${PORT}/api`);
   console.log(`🏥 Healthcheck en http://localhost:${PORT}/health`);
+  console.log(`🔌 WebSocket disponible en ws://localhost:${PORT}/ws`);
   console.log('ℹ️  Las migraciones están desactivadas temporalmente');
 });
+
+export { httpServer as server };
 
 // Manejo de cierre de la aplicación
 process.on('SIGTERM', () => {
   console.log('🚦 Recibida señal SIGTERM. Cerrando servidor...');
-  server.close(() => {
+  httpServer.close(() => {
     console.log('👋 Servidor cerrado');
     process.exit(0);
   });
