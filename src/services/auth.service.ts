@@ -31,60 +31,67 @@ export class AuthService {
 
   static async login(credentials: LoginCredentials): Promise<AuthResponse> {
     const { email, password } = credentials;
+    console.log(`🔍 Intentando login para el usuario: ${email}`);
 
-    // Buscar usuario por email
-    const [user] = await db
-      .select()
-      .from(users)
-      .where(eq(users.email, email))
-      .limit(1);
+    try {
+      // Buscar usuario por email
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+        .limit(1);
 
-    if (!user) {
-      throw new AuthenticationError('Credenciales inválidas');
+      if (!user) {
+        console.log('❌ Usuario no encontrado');
+        throw new AuthenticationError('Credenciales inválidas');
+      }
+
+      console.log(`✅ Usuario encontrado: ${user.id}`);
+      
+      // Verificar si el usuario tiene contraseña
+      const userWithPassword = user as User & { password?: string };
+      if (!userWithPassword.password) {
+        console.log('❌ El usuario no tiene contraseña configurada');
+        throw new AuthenticationError('Credenciales inválidas');
+      }
+
+      console.log('🔑 Verificando contraseña...');
+      
+      // Verificar contraseña
+      const isPasswordValid = await bcrypt.compare(password, userWithPassword.password);
+      console.log(`🔑 Resultado de la comparación de contraseña: ${isPasswordValid}`);
+      
+      if (!isPasswordValid) {
+        console.log('❌ Contraseña incorrecta');
+        throw new AuthenticationError('Credenciales inválidas');
+      }
+
+      // Crear el objeto de usuario con la contraseña
+      const userData: UserData = {
+        ...user,
+        password: userWithPassword.password
+      };
+      
+      console.log('✅ Contraseña válida');
+
+      // Actualizar última conexión
+      await db
+        .update(users)
+        .set({ lastActive: new Date() })
+        .where(eq(users.id, userData.id));
+
+      // Generar token JWT
+      const token = this.generateToken(userData);
+
+      // Devolver token y usuario (sin contraseña)
+      return {
+        token,
+        user: this.sanitizeUser(userData)
+      };
+    } catch (error) {
+      console.error('❌ Error en el login:', error);
+      throw error;
     }
-
-    // Asegurarse de que el usuario tiene una contraseña
-    if (!user) {
-      throw new AuthenticationError('Credenciales inválidas');
-    }
-
-    // Obtener la contraseña con un tipo seguro
-    const userWithPassword = user as User & { password: string };
-    if (!userWithPassword.password) {
-      throw new AuthenticationError('Credenciales inválidas');
-    }
-
-    // Crear el objeto de usuario con la contraseña
-    const userData: UserData = {
-      ...user,
-      password: userWithPassword.password
-    };
-
-    // Verificar contraseña
-    const passwordToCompare = userWithPassword.password;
-    if (!passwordToCompare) {
-      throw new AuthenticationError('Credenciales inválidas');
-    }
-    
-    const isPasswordValid = await bcrypt.compare(password, passwordToCompare);
-    if (!isPasswordValid) {
-      throw new AuthenticationError('Credenciales inválidas');
-    }
-
-    // Actualizar última conexión
-    await db
-      .update(users)
-      .set({ lastActive: new Date() })
-      .where(eq(users.id, userData.id));
-
-    // Generar token JWT
-    const token = this.generateToken(userData);
-
-    // Devolver token y usuario (sin contraseña)
-    return {
-      token,
-      user: this.sanitizeUser(userData)
-    };
   }
 
   static async register(data: RegisterData): Promise<AuthResponse> {

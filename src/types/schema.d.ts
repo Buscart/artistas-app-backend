@@ -13,4 +13,5 @@ export type Event = InferSelectModel<typeof schema.events>;
 export type Venue = InferSelectModel<typeof schema.venues>;
 export type Recommendation = InferSelectModel<typeof schema.recommendations>;
 export type BlogPost = InferSelectModel<typeof schema.blogPosts>;
+export type Offer = InferSelectModel<typeof schema.offers>;
 // Agrega más tipos según sea necesario

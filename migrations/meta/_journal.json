@@ -23,6 +23,13 @@
       "when": 1748824530775,
       "tag": "0001_marvelous_human_robot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1753299435756,
+      "tag": "0002_sparkling_scarecrow",
+      "breakpoints": true
     }
   ]
 }

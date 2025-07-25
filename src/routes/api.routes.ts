@@ -21,10 +21,18 @@ import { userController } from '../controllers/user.controller';
 // Importar controladores de elementos destacados
 import * as featuredController from '../controllers/featured.controller';
 
+// Importar controladores de ofertas
+import { offerController } from '../controllers/offer.controller';
+
+// Importar controladores de perfiles
+import { profileController } from '../controllers/profile.controller';
+
 // Importar rutas
 import firebaseTestRoutes from './firebase-test';
 import storageTestRoutes from './storage-test';
 import authRoutes from './auth.routes';
+import profileRoutes from './profile.routes';
+import offerRoutes from './offer.routes';
 
 // Crear el enrutador
 const router = Router();
@@ -45,11 +53,11 @@ router.use('/auth', authRoutes);
 const v1 = Router();
 
 // Rutas públicas
-v1.get('/artists', getAllArtists as RouteHandler);
-v1.get('/artists/featured', getFeaturedArtists as RouteHandler);
-v1.get('/artists/:id', getArtistById as RouteHandler);
-v1.get('/events', getUpcomingEvents as RouteHandler);
-v1.get('/blog', getBlogRecentPosts as RouteHandler);
+router.get('/v1/artists/featured', getFeaturedArtists);
+router.get('/v1/artists', getAllArtists);
+router.get('/v1/artists/:id', getArtistById);
+router.get('/v1/events', getUpcomingEvents);
+router.get('/v1/blog', getBlogRecentPosts);
 
 // Rutas protegidas (requieren autenticación)
 const protectedRoutes = Router();
@@ -80,6 +88,17 @@ v1.get('/events/search', EventController.searchEvents as RouteHandler);
 protectedRoutes.get('/profile', userController.getProfile as RouteHandler);
 protectedRoutes.put('/profile', userController.updateProfile as RouteHandler);
 protectedRoutes.patch('/profile/type', userController.updateUserType as RouteHandler);
+
+// Rutas de ofertas
+v1.post('/offers', offerController.create as RouteHandler);
+v1.get('/offers', offerController.getAll as RouteHandler);
+v1.get('/offers/:id', offerController.getById as RouteHandler);
+v1.patch('/offers/:id/status', offerController.updateStatus as RouteHandler);
+
+// Rutas de perfiles
+v1.get('/profiles', profileController.getAll as RouteHandler);
+v1.get('/profiles/:id', profileController.getById as RouteHandler);
+v1.get('/profiles/:id/reviews', profileController.getReviews as RouteHandler);
 
 // Montar rutas protegidas en v1
 v1.use(protectedRoutes);
