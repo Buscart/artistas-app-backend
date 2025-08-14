@@ -218,12 +218,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       title: req.body.title,
       content: req.body.content,
       authorId: req.user.id,
+      slug: req.body.slug || req.body.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
       tags: req.body.tags,
       excerpt: req.body.excerpt,
       featuredImage: req.body.featuredImage,
       category: req.body.category,
       visibility: req.body.visibility as 'draft' | 'public' | 'private',
-      publishedAt: req.body.publishedAt
+      publishedAt: req.body.publishedAt || new Date()
     };
 
     try {
@@ -271,22 +272,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/hiring/responses', isAuthenticated, async (req: Request, res: Response) => {
     const user = req.user as { id: string };
     try {
-      const { requestId, message, proposal } = req.body;
+      const { requestId: rawRequestId, message, proposal } = req.body;
+      
+      // Validar y convertir requestId a número
+      if (rawRequestId === undefined || rawRequestId === null) {
+        return res.status(400).json({ error: 'requestId is required' });
+      }
+      
+      const requestId = Number(rawRequestId);
+      if (isNaN(requestId)) {
+        return res.status(400).json({ error: 'requestId must be a valid number' });
+      }
       
       // Get artist ID from user ID
       const artists = await storage.artistStorage.getArtists({ userId: user.id });
       if (!artists || artists.length === 0) {
         return res.status(400).json({ error: 'User is not registered as an artist' });
       }
+      
       const artist = artists[0];
+      if (!artist || !('id' in artist) || typeof artist.id !== 'number') {
+        return res.status(400).json({ error: 'Invalid artist data' });
+      }
 
       // Create the response
       const response = await storage.hiring.createHiringResponse({
-        requestId,
-        artistId: artist.id,
-        proposal,
+        requestId, // Ya es un número
+        artistId: artist.id, // Aseguramos que es un número
+        proposal: proposal || '',
         accepted: true, // Default to accepted when artist responds
-        message
+        message: message || ''
       });
 
       res.json(response);

@@ -94,9 +94,9 @@ app.broadcastResponse = async (offerId: number, response: any) => {
       
       // Extraer solo los campos necesarios del artista
       const artistData = {
-        id: artist.id,
-        artistName: artist.artistName,
-        userId: artist.userId,
+        id: artist.artist.id,
+        artistName: artist.artist.artistName,
+        userId: artist.user.id,
         // Incluir otros campos necesarios del artista
       };
       
@@ -149,9 +149,8 @@ app.broadcastStatusUpdate = async (offerId: number, responseId: number, status: 
 
 // Configuración de middleware
 app.use(cors({
-  origin: function (origin, callback) {
-    console.log('Origen de la solicitud:', origin); // Log para depuración
-    // Permitir solicitudes sin 'origin' (como aplicaciones móviles o curl)
+  origin: (origin, callback) => {
+    // Si no hay origen (puede ser una solicitud del mismo origen o desde aplicaciones móviles)
     if (!origin) return callback(null, true);
     
     // Verificar si el origen está permitido (comparación flexible)
@@ -185,6 +184,16 @@ app.use((req, res, next) => {
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Servir archivos estáticos desde la carpeta uploads
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Servir archivos estáticos desde la carpeta uploads en la raíz del proyecto
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
 // Middleware para manejo de errores
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {

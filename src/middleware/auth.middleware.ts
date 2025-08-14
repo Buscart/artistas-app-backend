@@ -1,9 +1,26 @@
 import { Request, Response, NextFunction } from 'express';
-import { auth } from '../config/firebase';
-import { DecodedIdToken } from 'firebase-admin/auth';
-import { db } from '../db';
-import { users } from '../schema';
+import { auth } from '../config/firebase.js';
+import type { DecodedIdToken } from 'firebase-admin/auth';
+import { db } from '../db.js';
+import { users } from '../schema.js';
 import { eq } from 'drizzle-orm/sql';
+import type { User, UserWithId } from '../types/user.types.js';
+
+// Importar la definición de tipos de Express para extender Request
+import '../types/express/index.d.js';
+
+// Declarar el módulo para extender el espacio de nombres de Express
+declare global {
+  namespace Express {
+    interface Request {
+      user?: UserWithId;  // Usamos UserWithId de user.types.ts
+      decodedToken?: DecodedIdToken | { [key: string]: any };
+      files?: {
+        [fieldname: string]: Express.Multer.File[];
+      } | Express.Multer.File[] | undefined;
+    }
+  }
+}
 
 interface CustomDecodedToken {
   uid: string;
@@ -17,21 +34,6 @@ interface CustomDecodedToken {
   firebase?: any;
 }
 
-// Extender la interfaz Request
-declare global {
-  namespace Express {
-    interface Request {
-      user?: {
-        id: string;  // ✅ usa 'id', no '_id'
-        email: string;
-        userType: 'artist' | 'general' | 'company';
-        [key: string]: any;
-      };
-      decodedToken?: DecodedIdToken | CustomDecodedToken;
-    }
-  }
-}
-
 export const authMiddleware = async (
   req: Request,
   res: Response,
@@ -39,34 +41,56 @@ export const authMiddleware = async (
 ) => {
   try {
     console.log('🔍 Iniciando autenticación...');
+    console.log('🔍 URL de la solicitud:', req.originalUrl);
+    console.log('🔍 Método de la solicitud:', req.method);
+    console.log('🔍 Headers recibidos:', JSON.stringify(req.headers, null, 2));
 
     const authHeader = req.headers.authorization;
     if (!authHeader) {
       console.error('❌ No se proporcionó el encabezado de autorización');
       return res.status(401).json({
         success: false,
-        error: 'No se proporcionó el token de autenticación'
+        error: 'No se proporcionó el token de autenticación',
+        details: 'El encabezado Authorization es requerido'
       });
     }
 
     if (!authHeader.startsWith('Bearer ')) {
       console.error('❌ Formato de token inválido');
+      console.error('❌ Formato esperado: "Bearer [token]"');
+      console.error('❌ Formato recibido:', authHeader ? `"${authHeader.substring(0, 20)}..."` : 'undefined');
       return res.status(401).json({
         success: false,
-        error: 'Formato de token inválido. Use Bearer token'
+        error: 'Formato de token inválido',
+        details: 'Use el formato: Bearer [token]'
       });
     }
 
     const token = authHeader.split(' ')[1];
     if (!token) {
-      console.error('❌ Token no proporcionado');
+      console.error('❌ Token no proporcionado después de split');
+      console.error('❌ authHeader completo:', authHeader);
       return res.status(401).json({
         success: false,
-        error: 'Token no proporcionado'
+        error: 'Token no proporcionado',
+        details: 'El token no se pudo extraer del encabezado Authorization'
       });
     }
 
+    console.log('🔑 Token extraído (primeros 10 caracteres):', token.substring(0, 10) + '...');
+    console.log('🔑 Longitud del token:', token.length);
     console.log('🔑 Verificando token con Firebase...');
+    
+    // Verificar si el token parece ser un token JWT
+    const jwtParts = token.split('.');
+    if (jwtParts.length !== 3) {
+      console.error('❌ El token no parece ser un JWT válido');
+      return res.status(401).json({
+        success: false,
+        error: 'Token inválido',
+        details: 'El formato del token no es un JWT válido'
+      });
+    }
 
     let decodedToken: DecodedIdToken | CustomDecodedToken;
 
@@ -125,12 +149,13 @@ export const authMiddleware = async (
 
       const { id, email, userType, ...rest } = user;
 
+      // Usando type assertion para resolver temporalmente el conflicto de tipos
       req.user = {
-        id,  // ✅ CORRECTO: se expone como 'id'
+        id,
         email,
         userType: userType as 'artist' | 'general' | 'company',
         ...rest
-      };
+      } as UserWithId;
 
       console.log('✅ Usuario autenticado:', req.user);
 

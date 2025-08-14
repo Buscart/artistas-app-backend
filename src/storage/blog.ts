@@ -1,135 +1,153 @@
-import { Database } from '../db.js';
+import { db } from '../db.js';
 import { blogPosts, users } from '../schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and, or, like, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+
+type BlogPostWithAuthor = typeof blogPosts.$inferSelect & {
+  author: typeof users.$inferSelect;
+};
 
 export class BlogStorage {
-  constructor(private db: Database) {}
+  constructor(private db: PostgresJsDatabase<Record<string, unknown>>) {}
 
-  private async getBlogPostQuery(id?: number, filters?: { authorId?: string, category?: string, visibility?: 'draft' | 'public' | 'private', search?: string }) {
+  private async getBlogPostQuery(id?: number, filters?: { 
+    authorId?: string; 
+    category?: string; 
+    visibility?: 'draft' | 'public' | 'private'; 
+    search?: string; 
+  }) {
     const authorAlias = alias(users, 'author');
     
     const query = this.db
       .select({
-        id: blogPosts.id,
-        title: blogPosts.title,
-        content: blogPosts.content,
-        authorId: blogPosts.authorId,
-        tags: blogPosts.tags,
-        category: blogPosts.category,
-        visibility: blogPosts.visibility,
-        excerpt: blogPosts.excerpt,
-        featuredImage: blogPosts.featuredImage,
-        publishedAt: blogPosts.publishedAt,
-        createdAt: blogPosts.createdAt,
-        updatedAt: blogPosts.updatedAt,
-        likeCount: blogPosts.likeCount,
-        commentCount: blogPosts.commentCount,
-        author: authorAlias
+        // Select all blog post fields
+        ...Object.fromEntries(
+          Object.entries(blogPosts).map(([key, value]) => [key, blogPosts[key as keyof typeof blogPosts]])
+        ),
+        // Add author relation
+        author: {
+          id: authorAlias.id,
+          email: authorAlias.email,
+          firstName: authorAlias.firstName,
+          lastName: authorAlias.lastName,
+          profileImageUrl: authorAlias.profileImageUrl,
+          userType: authorAlias.userType,
+          isVerified: authorAlias.isVerified,
+          createdAt: authorAlias.createdAt,
+          updatedAt: authorAlias.updatedAt
+        }
       })
       .from(blogPosts)
       .leftJoin(authorAlias, eq(blogPosts.authorId, authorAlias.id));
 
-    if (id) {
-      query.where(eq(blogPosts.id, id));
+    if (id !== undefined) {
+      return query.where(eq(blogPosts.id, id));
     }
 
-    if (filters?.authorId) {
-      query.where(eq(blogPosts.authorId, filters.authorId));
-    }
-
-    if (filters?.category) {
-      query.where(eq(blogPosts.category, filters.category));
-    }
-
-    if (filters?.visibility) {
-      query.where(eq(blogPosts.visibility, filters.visibility));
+    if (filters) {
+      const conditions = [];
+      
+      if (filters.authorId) {
+        conditions.push(eq(blogPosts.authorId, filters.authorId));
+      }
+      
+      if (filters.category) {
+        conditions.push(eq(blogPosts.category, filters.category));
+      }
+      
+      if (filters.visibility) {
+        conditions.push(eq(blogPosts.visibility, filters.visibility));
+      }
+      
+      if (filters.search) {
+        conditions.push(
+          or(
+            like(blogPosts.title, `%${filters.search}%`),
+            like(blogPosts.content, `%${filters.search}%`),
+            sql`${blogPosts.tags}::text ILIKE ${`%${filters.search}%`}`
+          )
+        );
+      }
+      
+      if (conditions.length > 0) {
+        query.where(and(...conditions));
+      }
     }
 
     return query;
   }
 
-  async getBlogPost(id: number): Promise<(typeof blogPosts.$inferSelect & {
-    author: typeof users.$inferSelect
-  }) | undefined> {
-    const query = this.getBlogPostQuery(id);
-    const [result] = await query;
+  async getBlogPosts(filters: { 
+    authorId?: string; 
+    category?: string; 
+    visibility?: 'draft' | 'public' | 'private'; 
+    search?: string;
+  } = {}): Promise<BlogPostWithAuthor[]> {
+    const posts = await this.getBlogPostQuery(undefined, filters);
+    return posts as unknown as BlogPostWithAuthor[];
+  }
 
-    if (!result) return undefined;
+  async getBlogPost(id: number): Promise<BlogPostWithAuthor | undefined> {
+    const [post] = await this.getBlogPostQuery(id);
+    return post as unknown as BlogPostWithAuthor | undefined;
+  }
 
-    return {
-      ...result,
-      tags: result.tags || [],
-      category: result.category || null,
-      visibility: result.visibility || 'draft',
-      excerpt: result.excerpt || null,
-      featuredImage: result.featuredImage || null,
-      publishedAt: result.publishedAt || null,
-      author: result.author || {
-        id: '',
-        email: '',
-        firstName: null,
-        lastName: null,
-        profileImageUrl: null,
-        userType: 'general' as const,
-        bio: null,
-        city: null,
-        isVerified: false,
+  async createBlogPost(
+    post: Omit<typeof blogPosts.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>
+  ): Promise<typeof blogPosts.$inferSelect> {
+    const slug = post.title
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/--+/g, '-')
+      .trim();
+
+    const [created] = await this.db
+      .insert(blogPosts)
+      .values({
+        ...post,
+        slug,
+        excerpt: post.content.substring(0, 200),
+        tags: post.tags || [],
+        category: post.category || null,
+        visibility: post.visibility || 'draft',
+        allowComments: post.allowComments ?? true,
+        isFeatured: post.isFeatured ?? false,
+        isVerified: post.isVerified ?? false,
         createdAt: new Date(),
         updatedAt: new Date()
-      }
-    };
+      })
+      .returning();
+      
+    return created;
   }
 
-  async getBlogPosts(filters: { authorId?: string, category?: string, visibility?: 'draft' | 'public' | 'private', search?: string }): Promise<(typeof blogPosts.$inferSelect & { author: typeof users.$inferSelect })[]> {
-    const query = this.getBlogPostQuery(undefined, filters);
-    const results = await query;
-
-    return results.map((result) => ({
-      ...result,
-      tags: result.tags || [],
-      category: result.category || null,
-      visibility: result.visibility || 'draft',
-      excerpt: result.excerpt || null,
-      featuredImage: result.featuredImage || null,
-      publishedAt: result.publishedAt || null,
-      author: result.author || {
-        id: '',
-        email: '',
-        firstName: null,
-        lastName: null,
-        profileImageUrl: null,
-        userType: 'general' as const,
-        bio: null,
-        city: null,
-        isVerified: false,
-        createdAt: null,
-        updatedAt: null
-      }
-    }));
-  }
-
-  async createBlogPost(post: Omit<typeof blogPosts.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof blogPosts.$inferSelect> {
-    const [result] = await this.db.insert(blogPosts).values({
-      ...post,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }).returning();
-    return result;
-  }
-
-  async updateBlogPost(id: number, post: Partial<typeof blogPosts.$inferInsert>): Promise<typeof blogPosts.$inferSelect> {
-    const [result] = await this.db.update(blogPosts)
+  async updateBlogPost(
+    id: number, 
+    data: Partial<typeof blogPosts.$inferInsert>
+  ): Promise<typeof blogPosts.$inferSelect> {
+    const [updated] = await this.db
+      .update(blogPosts)
       .set({
-        ...post,
+        ...data,
         updatedAt: new Date()
       })
       .where(eq(blogPosts.id, id))
       .returning();
-    return result;
+      
+    if (!updated) {
+      throw new Error(`Blog post with ID ${id} not found`);
+    }
+    
+    return updated;
   }
 
   async deleteBlogPost(id: number): Promise<void> {
-    await this.db.delete(blogPosts).where(eq(blogPosts.id, id));
+    await this.db
+      .delete(blogPosts)
+      .where(eq(blogPosts.id, id));
   }
 }
+
+export const blogStorage = new BlogStorage(db);

@@ -1,38 +1,41 @@
-
 import { Router, type Request, type Response, type NextFunction, type RequestHandler } from 'express';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { authMiddleware } from '../middleware/auth.middleware.js';
 
 // Importar controladores de artista
 import { 
   getFeatured as getFeaturedArtists, 
   getAll as getAllArtists, 
   getById as getArtistById 
-} from '../controllers/artist.controller';
+} from '../controllers/artist.controller.js';
 
 // Importar controladores de eventos
-import EventController, { getUpcomingEvents } from '../controllers/event.controller';
+import EventController, { getUpcomingEvents } from '../controllers/event.controller.js';
 
 // Importar controladores del blog
-import { getRecentPosts as getBlogRecentPosts } from '../controllers/blog.controller';
+import { getRecentPosts as getBlogRecentPosts } from '../controllers/blog.controller.js';
 
 // Importar controladores de usuario
-import { userController } from '../controllers/user.controller';
+import { userController } from '../controllers/user.controller.js';
 
 // Importar controladores de elementos destacados
-import * as featuredController from '../controllers/featured.controller';
+import * as featuredController from '../controllers/featured.controller.js';
 
 // Importar controladores de ofertas
-import { offerController } from '../controllers/offer.controller';
+import { offerController } from '../controllers/offer.controller.js';
 
 // Importar controladores de perfiles
-import { profileController } from '../controllers/profile.controller';
+import { profileController } from '../controllers/profile.controller.js';
+
+// Importar rutas de posts
+import postRoutes from './posts.routes.js';
+
+// Importar rutas de elementos guardados
+import savedItemsRoutes from './saved-items.routes.js';
 
 // Importar rutas
-import firebaseTestRoutes from './firebase-test';
-import storageTestRoutes from './storage-test';
-import authRoutes from './auth.routes';
-import profileRoutes from './profile.routes';
-import offerRoutes from './offer.routes';
+import authRoutes from './auth.routes.js';
+import profileRoutes from './profile.routes.js';
+import offerRoutes from './offer.routes.js';
 
 // Crear el enrutador
 const router = Router();
@@ -40,11 +43,7 @@ const router = Router();
 // Extender el tipo RequestHandler para incluir los parámetros de ruta
 type RouteHandler<T = any> = RequestHandler<Record<string, string>, any, T>;
 
-// Firebase test routes
-router.use('/firebase', firebaseTestRoutes);
-
-// Storage routes (protegidas por autenticación)
-router.use('/storage', authMiddleware, storageTestRoutes);
+// No hay rutas de prueba en producción
 
 // Auth routes
 router.use('/auth', authRoutes);
@@ -78,6 +77,9 @@ v1.get('/profile', userController.getProfile as RouteHandler);
 v1.put('/profile', userController.updateProfile as RouteHandler);
 v1.get('/profile/:username', userController.getPublicProfile as RouteHandler);
 
+// Rutas de posts
+v1.use('/posts', postRoutes);
+
 // Rutas de eventos
 v1.post('/events', EventController.createEvent as RouteHandler);
 v1.put('/events/:id', EventController.updateEvent as RouteHandler);
@@ -105,6 +107,21 @@ v1.use(protectedRoutes);
 
 // Rutas públicas de usuario (después de las protegidas para evitar conflictos)
 v1.get('/users/:userId', userController.getPublicProfile as RouteHandler);
+
+// Rutas de autenticación
+router.use('/auth', authRoutes);
+
+// Rutas de perfil
+router.use('/profile', authMiddleware, profileRoutes);
+
+// Rutas de ofertas
+router.use('/offers', authMiddleware, offerRoutes);
+
+// Rutas de posts
+router.use('/posts', authMiddleware, postRoutes);
+
+// Rutas de elementos guardados
+router.use('/saved-items', authMiddleware, savedItemsRoutes);
 
 // Usar rutas de la API v1 con prefijo /api/v1
 router.use('/v1', v1);

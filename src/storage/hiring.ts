@@ -1,11 +1,12 @@
-import { Database } from '../db.js';
-import { eq } from 'drizzle-orm';
+import { db } from '../db.js';
+import { eq, and } from 'drizzle-orm';
 import { hiringRequests, hiringResponses } from '../schema.js';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 type HiringRequestStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
 
 export class HiringStorage {
-  constructor(private db: Database) {}
+  constructor(private db: PostgresJsDatabase<Record<string, unknown>>) {}
 
   async getActiveHiringRequests() {
     const results = await this.db

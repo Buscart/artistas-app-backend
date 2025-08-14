@@ -1,15 +1,18 @@
 import { categories } from '../schema.js';
-import { Database } from '../db.js';
+import { db } from '../db.js';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 export class CategoryStorage {
-  constructor(private db: Database) {}
+  constructor(private db: PostgresJsDatabase<Record<string, unknown>>) {}
 
-  async getCategories(): Promise<typeof categories.$inferSelect[]> {
+  async getCategories() {
     return await this.db.select().from(categories);
   }
 
-  async createCategory(category: Omit<typeof categories.$inferInsert, 'id'>): Promise<typeof categories.$inferSelect> {
+  async createCategory(category: Omit<typeof categories.$inferInsert, 'id'>) {
     const [result] = await this.db.insert(categories).values(category).returning();
     return result;
   }
 }
+
+export const categoryStorage = new CategoryStorage(db);

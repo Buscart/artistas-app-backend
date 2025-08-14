@@ -1,75 +1,113 @@
-import { Database } from '../db.js';
+import type { Database } from '../types/db.js';
 import { venues, users } from '../schema.js';
 import { eq, and } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
+type VenueWithCompany = typeof venues.$inferSelect & {
+  company: typeof users.$inferSelect;
+};
+
 export class VenueStorage {
   constructor(private db: Database) {}
 
-  async getVenue(id: number): Promise<(typeof venues.$inferSelect & {
-    owner: typeof users.$inferSelect
-  }) | undefined> {
-    const ownerAlias = alias(users, 'owner');
+  async getVenue(id: number): Promise<VenueWithCompany | undefined> {
+    const companyAlias = alias(users, 'company');
     
     const results = await this.db
       .select()
       .from(venues)
-      .leftJoin(ownerAlias, eq(venues.ownerId, ownerAlias.id))
+      .leftJoin(companyAlias, eq(venues.companyId, companyAlias.id))
       .where(eq(venues.id, id));
 
     const result = results[0];
     if (!result) return undefined;
 
+    // Create a proper company object with all required fields
+    const company = result.company || {
+      id: '',
+      email: '',
+      password: null,
+      firstName: '',
+      lastName: null,
+      displayName: null,
+      profileImageUrl: null,
+      coverImageUrl: null,
+      userType: 'company',
+      bio: null,
+      city: null,
+      address: null,
+      phone: null,
+      website: null,
+      socialMedia: null,
+      isVerified: false,
+      isFeatured: false,
+      isAvailable: true,
+      rating: '0',
+      totalReviews: 0,
+      fanCount: 0,
+      preferences: {},
+      settings: {},
+      lastActive: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
     return {
       ...result.venues,
-      owner: result.owner || {
-        id: '',
-        email: '',
-        firstName: null,
-        lastName: null,
-        profileImageUrl: null,
-        userType: 'general',
-        bio: null,
-        city: null,
-        isVerified: false,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }
+      company
     };
   }
 
-  async getVenues(filters: { ownerId?: string }): Promise<(typeof venues.$inferSelect & {
-    owner: typeof users.$inferSelect
-  })[]> {
-    const ownerAlias = alias(users, 'owner');
+  async getVenues(filters: { companyId?: number } = {}): Promise<VenueWithCompany[]> {
+    const companyAlias = alias(users, 'company');
     
-    let conditions = [];
-    if (filters.ownerId) {
-      conditions.push(eq(venues.ownerId, filters.ownerId));
-    }
-
-    const results = await this.db
+    const query = this.db
       .select()
       .from(venues)
-      .leftJoin(ownerAlias, eq(venues.ownerId, ownerAlias.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+      .leftJoin(companyAlias, eq(venues.companyId, companyAlias.id));
 
-    return results.map((result: { venues: typeof venues.$inferSelect; owner: typeof users.$inferSelect | null }) => ({
-      ...result.venues,
-      owner: result.owner || {
+    if (filters.companyId !== undefined) {
+      query.where(eq(venues.companyId, filters.companyId));
+    }
+
+    const results = await query;
+    
+    return results.map(result => {
+      // Create a proper company object with all required fields
+      const company = result.company || {
         id: '',
         email: '',
-        firstName: null,
+        password: null,
+        firstName: '',
         lastName: null,
+        displayName: null,
         profileImageUrl: null,
-        userType: 'general',
+        coverImageUrl: null,
+        userType: 'company',
         bio: null,
         city: null,
+        address: null,
+        phone: null,
+        website: null,
+        socialMedia: null,
         isVerified: false,
+        isFeatured: false,
+        isAvailable: true,
+        rating: '0',
+        totalReviews: 0,
+        fanCount: 0,
+        preferences: {},
+        settings: {},
+        lastActive: null,
         createdAt: new Date(),
         updatedAt: new Date()
-      }
-    }));
+      };
+
+      return {
+        ...result.venues,
+        company
+      };
+    });
   }
 
   async createVenue(data: typeof venues.$inferInsert): Promise<typeof venues.$inferSelect> {

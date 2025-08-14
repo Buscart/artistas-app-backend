@@ -17,6 +17,7 @@
     "migrate:custom": "NODE_OPTIONS='--loader ts-node/esm' scripts/migrate.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.53.0",
     "@types/cors": "^2.8.18",
     "@types/fs-extra": "^11.0.4",
     "@types/multer": "^1.4.12",

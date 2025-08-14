@@ -56,7 +56,7 @@ export const artists = pgTable('artists', {
   yearsOfExperience: integer('years_of_experience'),
   description: text('description'),
   bio: text('bio'),
-socialMedia: jsonb('social_media').default({}), // 👈 AÑADIDO AQUÍ
+  socialMedia: jsonb('social_media').default({}), // 
   
   // Multimedia
   portfolio: jsonb('portfolio').default({}),
@@ -277,16 +277,18 @@ export const venues = pgTable('venues', {
 export const recommendations = pgTable('recommendations', {
   id: serial('id').primaryKey(),
   userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  postId: integer('post_id').references(() => blogPosts.id, { onDelete: 'cascade' }),
   artistId: integer('artist_id').references(() => artists.id, { onDelete: 'cascade' }),
   eventId: integer('event_id').references(() => events.id, { onDelete: 'cascade' }),
   venueId: integer('venue_id').references(() => venues.id, { onDelete: 'cascade' }),
   title: varchar('title').notNull(),
   content: text('content').notNull(),
-  type: varchar('type', { enum: ['artist', 'event', 'venue'] }).notNull(),
+  type: varchar('type', { enum: ['artist', 'event', 'venue', 'post'] }).notNull(),
   score: numeric('score', { precision: 3, scale: 2 }).default(sql`0`),
   isApproved: boolean('is_approved').default(true),
   likeCount: integer('like_count').default(sql`0`),
   replyCount: integer('reply_count').default(sql`0`),
+  isActive: boolean('is_active').default(true),
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
@@ -366,13 +368,27 @@ export const blogPostLikes = pgTable('blog_post_likes', {
   postUserIdx: uniqueIndex('post_user_idx').on(table.postId, table.userId),
 }));
 
+export const gallery = pgTable('gallery', {
+  id: serial('id').primaryKey(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  title: varchar('title'),
+  description: text('description'),
+  imageUrl: varchar('image_url').notNull(),
+  tags: text('tags').array().default(sql`'{}'::text[]`),
+  isPublic: boolean('is_public').default(true),
+  metadata: jsonb('metadata').default({}),
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const favorites = pgTable('favorites', {
   id: serial('id').primaryKey(),
-  userId: varchar('user_id').notNull().references(() => users.id),
-  artistId: integer('artist_id').references(() => artists.id),
-  eventId: integer('event_id').references(() => events.id),
-  venueId: integer('venue_id').references(() => venues.id),
-  type: varchar('type', { enum: ['artist', 'event', 'venue'] }).notNull(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  artistId: integer('artist_id').references(() => artists.id, { onDelete: 'cascade' }),
+  eventId: integer('event_id').references(() => events.id, { onDelete: 'cascade' }),
+  venueId: integer('venue_id').references(() => venues.id, { onDelete: 'cascade' }),
+  galleryId: integer('gallery_id').references(() => gallery.id, { onDelete: 'cascade' }),
+  type: varchar('type', { enum: ['artist', 'event', 'venue', 'gallery'] }).notNull(),
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
 
@@ -451,3 +467,14 @@ export const offers = pgTable('offers', {
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const savedItems = pgTable('saved_items', {
+  id: serial('id').primaryKey(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  postId: integer('post_id').references(() => blogPosts.id, { onDelete: 'cascade' }),
+  savedAt: timestamp('saved_at').default(sql`CURRENT_TIMESTAMP`),
+  notes: text('notes'),
+  // Índice único para evitar duplicados
+}, (table) => ({
+  userPostIdx: uniqueIndex('user_post_idx').on(table.userId, table.postId),
+}));

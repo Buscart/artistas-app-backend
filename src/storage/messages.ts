@@ -1,4 +1,4 @@
-import { Database } from '../db.js';
+import type { Database } from '../types/db.js';
 import { messages, users } from '../schema.js';
 import { eq, and } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -36,29 +36,21 @@ export class MessageStorage {
       sender: result.sender || {
         id: '',
         email: '',
-        firstName: null,
-        lastName: null,
-        profileImageUrl: null,
+        firstName: '',
         userType: 'general' as const,
-        bio: null,
-        city: null,
         isVerified: false,
-        createdAt: null,
-        updatedAt: null
-      },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      } as any,
       receiver: result.receiver || {
         id: '',
         email: '',
-        firstName: null,
-        lastName: null,
-        profileImageUrl: null,
+        firstName: '',
         userType: 'general' as const,
-        bio: null,
-        city: null,
         isVerified: false,
-        createdAt: null,
-        updatedAt: null
-      }
+        createdAt: new Date(),
+        updatedAt: new Date()
+      } as any
     };
   }
 
@@ -107,26 +99,48 @@ export class MessageStorage {
         firstName: null,
         lastName: null,
         profileImageUrl: null,
+        coverImageUrl: null,
         userType: 'general' as const,
         bio: null,
         city: null,
+        address: null,
+        phone: null,
+        website: null,
+        socialMedia: null,
         isVerified: false,
+        isActive: true,
+        lastLogin: null,
+        emailVerified: false,
+        phoneVerified: false,
+        preferences: null,
+        metadata: null,
         createdAt: null,
         updatedAt: null
-      },
+      } as any,
       receiver: result.receiver || {
         id: '',
         email: '',
         firstName: null,
         lastName: null,
         profileImageUrl: null,
+        coverImageUrl: null,
         userType: 'general' as const,
         bio: null,
         city: null,
+        address: null,
+        phone: null,
+        website: null,
+        socialMedia: null,
         isVerified: false,
+        isActive: true,
+        lastLogin: null,
+        emailVerified: false,
+        phoneVerified: false,
+        preferences: null,
+        metadata: null,
         createdAt: null,
         updatedAt: null
-      }
+      } as any
     }));
   }
 
@@ -176,26 +190,48 @@ export class MessageStorage {
         firstName: null,
         lastName: null,
         profileImageUrl: null,
+        coverImageUrl: null,
         userType: 'general' as const,
         bio: null,
         city: null,
+        address: null,
+        phone: null,
+        website: null,
+        socialMedia: null,
         isVerified: false,
+        isActive: true,
+        lastLogin: null,
+        emailVerified: false,
+        phoneVerified: false,
+        preferences: null,
+        metadata: null,
         createdAt: null,
         updatedAt: null
-      },
+      } as any,
       receiver: result.receiver || {
         id: '',
         email: '',
         firstName: null,
         lastName: null,
         profileImageUrl: null,
+        coverImageUrl: null,
         userType: 'general' as const,
         bio: null,
         city: null,
+        address: null,
+        phone: null,
+        website: null,
+        socialMedia: null,
         isVerified: false,
+        isActive: true,
+        lastLogin: null,
+        emailVerified: false,
+        phoneVerified: false,
+        preferences: null,
+        metadata: null,
         createdAt: null,
         updatedAt: null
-      }
+      } as any
     }));
   }
 

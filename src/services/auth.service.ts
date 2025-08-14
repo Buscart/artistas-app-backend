@@ -1,7 +1,7 @@
 import * as jwt from 'jsonwebtoken';
 import * as bcrypt from 'bcrypt';
-import { db } from '../db';
-import { users } from '../schema';
+import { db } from '../db.js';
+import { users } from '../schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import type { 
@@ -13,7 +13,7 @@ import type {
   RegisterData, 
   AuthResponse,
   User 
-} from '../types/user.types';
+} from '../types/user.types.js';
 
 // Los tipos ahora están definidos en src/types/user.types.ts
 

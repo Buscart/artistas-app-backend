@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { uploadBlogCoverImage, deleteImage } from '../controllers/storage.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { uploadBlogCoverImage, deleteImage } from '../controllers/storage.controller.js';
+import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = Router();
 

@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { auth } from '../config/firebase';
-import { db } from '../db';
-import { users } from '../schema';
+import { auth } from '../config/firebase.js';
+import { db } from '../db.js';
+import { users } from '../schema.js';
 import { eq, sql } from 'drizzle-orm';
-import { SignUpData, SignInData } from '../types/auth';
-import { authController } from '../controllers/auth.controller';
-import { authMiddleware } from '../middleware/auth.middleware';
+import { SignUpData, SignInData } from '../types/auth.js';
+import { authController } from '../controllers/auth.controller.js';
+import { authMiddleware } from '../middleware/auth.middleware.js';
 
 const router = Router();
 

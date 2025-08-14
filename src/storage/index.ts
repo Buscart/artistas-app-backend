@@ -1,33 +1,78 @@
-import { Database, db } from '../db.js';
-import { IStorage, StorageConfig } from './interfaces.js';
-import { EventStorage } from './events.js';
-import { UserStorage } from './users.js';
-import { VenueStorage } from './venues.js';
-import { ArtistStorage } from './artists.js';
-import { MessageStorage } from './messages.js';
+// External Dependencies
+import { and, eq, isNotNull, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import type { InferSelectModel, SQL } from 'drizzle-orm';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+
+// Database Schema
+import { db } from '../db.js';
+import * as schema from '../schema.js';
+
+// Storage Interfaces
+import type { IStorage, StorageConfig } from './interfaces.js';
+
+// Storage Implementations
 import { RecommendationStorage } from './recommendations.js';
 import { FavoriteStorage } from './favorites.js';
 import { BlogStorage } from './blog.js';
 import { ReviewStorage } from './reviews.js';
 import { CategoryStorage } from './categories.js';
+import { EventStorage } from './events.js';
+import { UserStorage } from './users.js';
+import { VenueStorage } from './venues.js';
+import { ArtistStorage } from './artists.js';
+import { MessageStorage } from './messages.js';
 import { HiringStorage } from './hiring.js';
-import {
-  favorites,
-  users,
-  events,
-  venues,
-  blogPosts,
-  artists,
-  messages,
-  recommendations,
-  categories,
-} from '../schema.js';
+
+// Re-export commonly used schema tables for easier access
+const { users, events, venues, blogPosts, artists, categories, favorites, messages, recommendations } = schema;
 
 const config: StorageConfig = { db };
+
+// Definir tipos para las relaciones
+type UserWithRelations = typeof users.$inferSelect;
+type CategoryWithRelations = typeof categories.$inferSelect;
+type ArtistWithRelations = typeof artists.$inferSelect & {
+  user: UserWithRelations;
+  category?: CategoryWithRelations;
+};
+
+type FavoriteWithUser = typeof favorites.$inferSelect & {
+  user: UserWithRelations;
+};
+
+type SocialMedia = {
+  instagram?: string;
+  twitter?: string;
+  facebook?: string;
+  website?: string;
+};
+
+type FavoriteItem = {
+  type: 'artist' | 'event' | 'venue' | 'gallery';
+  id: number;
+  userId: string;
+  targetId: number;
+  targetType: string;
+  createdAt: Date;
+  updatedAt: Date;
+  user: UserWithRelations;
+};
+
+// Definir el tipo para el propietario del venue
+type VenueOwner = NonNullable<typeof users.$inferSelect>;
+
+// Definir el tipo para el venue con su propietario
+type VenueWithCompany = typeof venues.$inferSelect & {
+  owner: VenueOwner;
+};
 
 export class DatabaseStorage implements IStorage {
   private static instance: DatabaseStorage | null = null;
   private config: StorageConfig;
+  public readonly db: PostgresJsDatabase<Record<string, unknown>>;
+  
+  // Storage implementations
   public eventStorage: EventStorage;
   public userStorage: UserStorage;
   public venueStorage: VenueStorage;
@@ -42,178 +87,388 @@ export class DatabaseStorage implements IStorage {
 
   private constructor(config: StorageConfig) {
     this.config = config;
-    this.eventStorage = new EventStorage(config.db);
-    this.userStorage = new UserStorage(config.db);
-    this.venueStorage = new VenueStorage(config.db);
-    this.artistStorage = new ArtistStorage(config.db);
-    this.messageStorage = new MessageStorage(config.db);
-    this.recommendationStorage = new RecommendationStorage(config.db);
-    this.favoriteStorage = new FavoriteStorage(config.db);
-    this.blogStorage = new BlogStorage(config.db);
-    this.categoryStorage = new CategoryStorage(config.db);
-    this.reviews = new ReviewStorage(config.db);
-    this.hiring = new HiringStorage(config.db);
+    this.db = config.db;
+    
+    // Initialize storage implementations
+    this.eventStorage = new EventStorage(this.db);
+    this.userStorage = new UserStorage(this.db);
+    this.venueStorage = new VenueStorage(this.db);
+    this.artistStorage = new ArtistStorage(this.db);
+    this.messageStorage = new MessageStorage(this.db);
+    this.recommendationStorage = new RecommendationStorage(this.db);
+    this.favoriteStorage = new FavoriteStorage(this.db);
+    this.blogStorage = new BlogStorage(this.db);
+    this.categoryStorage = new CategoryStorage(this.db);
+    this.reviews = new ReviewStorage(this.db);
+    this.hiring = new HiringStorage(this.db);
   }
 
-  public static getInstance(): DatabaseStorage {
+  public static getInstance(config: StorageConfig): DatabaseStorage {
     if (!DatabaseStorage.instance) {
-      DatabaseStorage.instance = new DatabaseStorage({ db });
+      DatabaseStorage.instance = new DatabaseStorage(config);
     }
     return DatabaseStorage.instance;
   }
 
   // Category methods
-  getCategories(): Promise<typeof categories.$inferSelect[]> {
+  async getCategories(): Promise<CategoryWithRelations[]> {
     return this.categoryStorage.getCategories();
   }
 
-  createCategory(category: Omit<typeof categories.$inferInsert, 'id'>): Promise<typeof categories.$inferSelect> {
+  async createCategory(category: Omit<typeof categories.$inferInsert, 'id'>): Promise<CategoryWithRelations> {
     return this.categoryStorage.createCategory(category);
   }
 
   // User methods
-  getUser(id: string): Promise<typeof users.$inferSelect | undefined> {
+  async getUser(id: string): Promise<UserWithRelations | undefined> {
     return this.userStorage.getUser(id);
   }
 
-  async upsertUser(user: { id: string } & Partial<{ email: string; firstName: string | null; lastName: string | null; profileImageUrl: string | null; userType: 'general' | 'artist' | 'company'; bio: string | null; city: string | null; isVerified: boolean }>): Promise<typeof users.$inferSelect> {
-    return this.userStorage.upsertUser(user);
-  }
-
-  getUsers(filters: { userType?: 'general' | 'artist' | 'company' }): Promise<typeof users.$inferSelect[]> {
+  async getUsers(filters: { userType?: 'general' | 'artist' | 'company' } = {}): Promise<UserWithRelations[]> {
     return this.userStorage.getUsers(filters);
   }
 
-  // Event methods
-  getEvent(id: number): Promise<(typeof events.$inferSelect & { organizer: typeof users.$inferSelect; category?: typeof categories.$inferSelect }) | undefined> {
-    return this.eventStorage.getEvent(id);
-  }
+  async upsertUser(
+    user: { id: string } & Partial<{
+      email: string;
+      firstName: string | null;
+      lastName: string | null;
+      profileImageUrl: string | null;
+      userType: 'general' | 'artist' | 'company';
+      bio: string | null;
+      city: string | null;
+      isVerified: boolean;
+    }>
+  ): Promise<UserWithRelations> {
+    // Crear el objeto con valores por defecto
+    const now = new Date();
+    const userData = {
+      id: user.id,
+      email: user.email || '',
+      firstName: user.firstName ?? null,
+      lastName: user.lastName ?? null,
+      profileImageUrl: user.profileImageUrl ?? null,
+      userType: user.userType ?? 'general',
+      bio: user.bio ?? null,
+      city: user.city ?? null,
+      isVerified: user.isVerified ?? false,
+      createdAt: now,
+      updatedAt: now
+    };
 
-  getEvents(filters: { categoryId?: number; organizerId?: string }): Promise<(typeof events.$inferSelect & { organizer: typeof users.$inferSelect; category?: typeof categories.$inferSelect })[]> {
-    return this.eventStorage.getEvents(filters);
-  }
-
-  createEvent(event: Omit<typeof events.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof events.$inferSelect> {
-    return this.eventStorage.createEvent(event);
-  }
-
-  updateEvent(id: number, event: Partial<typeof events.$inferInsert>): Promise<typeof events.$inferSelect> {
-    return this.eventStorage.updateEvent(id, event);
-  }
-
-  deleteEvent(id: number): Promise<void> {
-    return this.eventStorage.deleteEvent(id);
-  }
-
-  // Venue methods
-  getVenue(id: number): Promise<(typeof venues.$inferSelect & { owner: typeof users.$inferSelect }) | undefined> {
-    return this.venueStorage.getVenue(id);
-  }
-
-  getVenues(filters: { ownerId?: string }): Promise<(typeof venues.$inferSelect & { owner: typeof users.$inferSelect })[]> {
-    return this.venueStorage.getVenues(filters);
-  }
-
-  createVenue(venue: Omit<typeof venues.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof venues.$inferSelect> {
-    return this.venueStorage.createVenue(venue);
-  }
-
-  updateVenue(id: number, venue: Partial<typeof venues.$inferInsert>): Promise<typeof venues.$inferSelect> {
-    return this.venueStorage.updateVenue(id, venue);
-  }
-
-  deleteVenue(id: number): Promise<void> {
-    return this.venueStorage.deleteVenue(id);
+    // Usar sql.raw para manejar los valores nulos correctamente
+    const [result] = await this.db
+      .insert(users)
+      .values({
+        ...userData,
+        firstName: userData.firstName === null ? sql`NULL` : userData.firstName,
+        lastName: userData.lastName === null ? sql`NULL` : userData.lastName,
+        bio: userData.bio === null ? sql`NULL` : userData.bio,
+        city: userData.city === null ? sql`NULL` : userData.city,
+        profileImageUrl: userData.profileImageUrl === null ? sql`NULL` : userData.profileImageUrl
+      })
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          email: userData.email,
+          firstName: userData.firstName === null ? sql`NULL` : userData.firstName,
+          lastName: userData.lastName === null ? sql`NULL` : userData.lastName,
+          profileImageUrl: userData.profileImageUrl === null ? sql`NULL` : userData.profileImageUrl,
+          userType: userData.userType,
+          bio: userData.bio === null ? sql`NULL` : userData.bio,
+          city: userData.city === null ? sql`NULL` : userData.city,
+          isVerified: userData.isVerified,
+          updatedAt: now
+        }
+      })
+      .returning();
+    
+    return result as UserWithRelations;
   }
 
   // Artist methods
-  getArtist(id: number): Promise<(typeof artists.$inferSelect & { user: typeof users.$inferSelect; category?: typeof categories.$inferSelect }) | undefined> {
-    return this.artistStorage.getArtist(id);
+  async getArtist(id: number): Promise<ArtistWithRelations | undefined> {
+    try {
+      const result = await this.db
+        .select()
+        .from(artists)
+        .leftJoin(users, eq(artists.userId, users.id))
+        .leftJoin(categories, eq(artists.categoryId, categories.id))
+        .where(eq(artists.id, id))
+        .limit(1);
+
+      if (result.length === 0) {
+        return undefined;
+      }
+
+      const artistData = result[0];
+      const artist = artistData.artists;
+      const user = artistData.users;
+      const category = artistData.categories;
+      
+      if (!user) {
+        throw new Error('User not found for artist');
+      }
+
+      return {
+        ...artist,
+        user,
+        category: category || undefined
+      };
+    } catch (error) {
+      console.error('Error fetching artist:', error);
+      throw new Error('Failed to fetch artist');
+    }
   }
 
-  getArtists(filters: { categoryId?: number; userId?: string }): Promise<(typeof artists.$inferSelect & { user: typeof users.$inferSelect; category?: typeof categories.$inferSelect })[]> {
-    return this.artistStorage.getArtists(filters);
+  async getArtists(filters: { categoryId?: number; userId?: string } = {}): Promise<ArtistWithRelations[]> {
+    try {
+      const { categoryId, userId } = filters;
+      
+      // Build the base query with necessary joins
+      const query = this.db
+        .select()
+        .from(artists)
+        .leftJoin(users, eq(artists.userId, users.id))
+        .leftJoin(categories, eq(artists.categoryId, categories.id));
+
+      // Apply filters if present
+      const conditions: SQL[] = [];
+      
+      if (categoryId) {
+        conditions.push(eq(artists.categoryId, categoryId));
+      }
+      
+      if (userId) {
+        conditions.push(eq(artists.userId, userId));
+      }
+      
+      // Apply conditions with AND if any
+      if (conditions.length > 0) {
+        query.where(and(...conditions));
+      }
+      
+      // Execute the query
+      const results = await query;
+      
+      // Transform and return the results
+      return results.map(row => {
+        if (!row.users) {
+          throw new Error('User not found for artist');
+        }
+        
+        return {
+          ...row.artists,
+          user: row.users,
+          category: row.categories || undefined
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching artists:', error);
+      throw new Error('Failed to fetch artists');
+    }
   }
 
-  createArtist(artist: Omit<typeof artists.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof artists.$inferSelect> {
-    return this.artistStorage.createArtist(artist);
+  async createArtist(artistData: Omit<typeof artists.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof artists.$inferSelect> {
+    try {
+      const [newArtist] = await this.db
+        .insert(artists)
+        .values({
+          ...artistData,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        .returning();
+
+      if (!newArtist) {
+        throw new Error('Failed to create artist');
+      }
+
+      return newArtist;
+    } catch (error) {
+      console.error('Error creating artist:', error);
+      throw new Error('Failed to create artist');
+    }
   }
 
-  updateArtist(id: number, artist: Partial<typeof artists.$inferInsert>): Promise<typeof artists.$inferSelect> {
-    return this.artistStorage.updateArtist(id, artist);
-  }
+  async updateArtist(
+    id: number,
+    artistData: Partial<typeof artists.$inferInsert>
+  ): Promise<typeof artists.$inferSelect> {
+    try {
+      const [updatedArtist] = await this.db
+        .update(artists)
+        .set({
+          ...artistData,
+          updatedAt: new Date()
+        })
+        .where(eq(artists.id, id))
+        .returning();
 
-  deleteArtist(id: number): Promise<void> {
-    return this.artistStorage.deleteArtist(id);
+      if (!updatedArtist) {
+        throw new Error(`Artist with ID ${id} not found`);
+      }
+
+      return updatedArtist;
+    } catch (error) {
+      console.error(`Error updating artist ${id}:`, error);
+      throw new Error('Failed to update artist');
+    }
   }
 
   // Message methods
-  getMessage(id: number): Promise<(typeof messages.$inferSelect & { sender: typeof users.$inferSelect; receiver: typeof users.$inferSelect }) | undefined> {
+  async getMessage(id: number) {
     return this.messageStorage.getMessage(id);
   }
 
-  getMessages(filters: { senderId?: string; receiverId?: string }): Promise<(typeof messages.$inferSelect & { sender: typeof users.$inferSelect; receiver: typeof users.$inferSelect })[]> {
+  async getMessages(filters: { senderId?: string; receiverId?: string } = {}) {
     return this.messageStorage.getMessages(filters);
   }
 
-  getUserMessages(userId: string): Promise<(typeof messages.$inferSelect & { sender: typeof users.$inferSelect; receiver: typeof users.$inferSelect })[]> {
-    return this.messageStorage.getUserMessages(userId);
-  }
-
-  getConversation(userId1: string, userId2: string): Promise<(typeof messages.$inferSelect & { sender: typeof users.$inferSelect; receiver: typeof users.$inferSelect })[]> {
-    return this.messageStorage.getConversation(userId1, userId2);
-  }
-
-  sendMessage(message: Omit<typeof messages.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof messages.$inferSelect> {
+  async sendMessage(message: Omit<typeof messages.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>) {
     return this.messageStorage.sendMessage(message);
   }
 
+  async getUserMessages(userId: string) {
+    return this.messageStorage.getUserMessages(userId);
+  }
+
+  async getConversation(userId1: string, userId2: string) {
+    return this.messageStorage.getConversation(userId1, userId2);
+  }
+
   // Recommendation methods
-  getRecommendations(filters: { categoryId?: number; city?: string; isActive?: boolean; search?: string }): Promise<(typeof recommendations.$inferSelect & { user: typeof users.$inferSelect })[]> {
+  async getRecommendations(filters: { categoryId?: number, city?: string, isActive?: boolean, search?: string } = {}) {
     return this.recommendationStorage.getRecommendations(filters);
   }
 
-  createRecommendation(recommendation: Omit<typeof recommendations.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof recommendations.$inferSelect> {
+  async createRecommendation(recommendation: Omit<typeof recommendations.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>) {
     return this.recommendationStorage.createRecommendation(recommendation);
   }
 
   // Favorite methods
-  getFavorites(filters: { userId: string }): Promise<(typeof favorites.$inferSelect & { user: typeof users.$inferSelect })[]> {
-    return this.favoriteStorage.getFavorites(filters.userId);
+  async getFavorites(filters: { userId: string }) {
+    return this.favoriteStorage.getFavorites(filters);
   }
 
-  getUserFavorites(userId: string, targetType?: string): Promise<(typeof favorites.$inferSelect & { user: typeof users.$inferSelect })[]> {
+  async getUserFavorites(userId: string, targetType?: 'artist' | 'gallery' | 'event' | 'venue') {
     return this.favoriteStorage.getUserFavorites(userId, targetType);
   }
 
-  addFavorite(favorite: Omit<typeof favorites.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof favorites.$inferSelect> {
+  async addFavorite(favorite: Omit<typeof favorites.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>) {
     return this.favoriteStorage.addFavorite(favorite);
   }
 
-  removeFavorite(userId: string, targetId: number, targetType: string): Promise<void> {
+  async removeFavorite(userId: string, targetId: number, targetType: 'artist' | 'gallery' | 'event' | 'venue') {
     return this.favoriteStorage.removeFavorite(userId, targetId, targetType);
   }
 
   // Blog methods
-  getBlogPost(id: number): Promise<(typeof blogPosts.$inferSelect & { author: typeof users.$inferSelect }) | undefined> {
+  async getBlogPost(id: number) {
     return this.blogStorage.getBlogPost(id);
   }
 
-  getBlogPosts(filters: { authorId?: string; category?: string; visibility?: 'draft' | 'public' | 'private'; search?: string }): Promise<(typeof blogPosts.$inferSelect & { author: typeof users.$inferSelect })[]> {
+  async getBlogPosts(filters: { authorId?: string, category?: string, visibility?: 'draft' | 'public' | 'private', search?: string } = {}) {
     return this.blogStorage.getBlogPosts(filters);
   }
 
-  createBlogPost(post: Omit<typeof blogPosts.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof blogPosts.$inferSelect> {
+  async createBlogPost(post: Omit<typeof blogPosts.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>) {
     return this.blogStorage.createBlogPost(post);
   }
 
-  updateBlogPost(id: number, post: Partial<typeof blogPosts.$inferInsert>): Promise<typeof blogPosts.$inferSelect> {
+  async updateBlogPost(id: number, post: Partial<typeof blogPosts.$inferInsert>) {
     return this.blogStorage.updateBlogPost(id, post);
   }
 
-  deleteBlogPost(id: number): Promise<void> {
+  async deleteBlogPost(id: number) {
     return this.blogStorage.deleteBlogPost(id);
+  }
+
+  // Event methods
+  async getEvent(id: number) {
+    return this.eventStorage.getEvent(id);
+  }
+
+  async getEvents(filters: { categoryId?: number; organizerId?: string } = {}) {
+    return this.eventStorage.getEvents(filters);
+  }
+
+  async createEvent(event: Omit<typeof events.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>) {
+    return this.eventStorage.createEvent(event);
+  }
+
+  async updateEvent(id: number, event: Partial<typeof events.$inferInsert>) {
+    return this.eventStorage.updateEvent(id, event);
+  }
+
+  async deleteEvent(id: number) {
+    return this.eventStorage.deleteEvent(id);
+  }
+
+  // Venue methods
+  async getVenue(id: number): Promise<VenueWithCompany | undefined> {
+    const companyAlias = alias(users, 'company');
+    
+    const results = await this.db
+      .select()
+      .from(venues)
+      .innerJoin(companyAlias, eq(venues.companyId, companyAlias.id))
+      .where(eq(venues.id, id));
+
+    const result = results[0];
+    if (!result || !result.company) return undefined;
+
+    return {
+      ...result.venues,
+      owner: result.company
+    } as VenueWithCompany;
+  }
+
+  async getVenues(filters: { ownerId?: string } = {}): Promise<VenueWithCompany[]> {
+    const companyAlias = alias(users, 'company');
+    
+    // Construir la consulta base
+    const query = this.db
+      .select()
+      .from(venues)
+      .innerJoin(companyAlias, eq(venues.companyId, companyAlias.id));
+
+    // Aplicar filtros condicionalmente
+    const filteredQuery = filters.ownerId 
+      ? query.where(eq(companyAlias.id, filters.ownerId))
+      : query;
+
+    const results = await filteredQuery;
+    
+    // Mapear los resultados al formato esperado
+    return results.map(row => ({
+      ...row.venues,
+      owner: row.company!
+    }));
+  }
+
+  async createVenue(venue: Omit<typeof venues.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>) {
+    return this.venueStorage.createVenue(venue);
+  }
+
+  async updateVenue(id: number, venue: Partial<typeof venues.$inferInsert>) {
+    return this.venueStorage.updateVenue(id, venue);
+  }
+
+  async deleteVenue(id: number) {
+    return this.venueStorage.deleteVenue(id);
+  }
+
+  // Artist deletion
+  async deleteArtist(id: number): Promise<void> {
+    try {
+      await this.db.delete(artists).where(eq(artists.id, id));
+    } catch (error) {
+      console.error(`Error deleting artist ${id}:`, error);
+      throw new Error('Failed to delete artist');
+    }
   }
 }
 
-export const storage = DatabaseStorage.getInstance();
+// Export a singleton instance of the storage
+export const storage = DatabaseStorage.getInstance({ db });

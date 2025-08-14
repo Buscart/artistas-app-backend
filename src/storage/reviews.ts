@@ -1,4 +1,4 @@
-import { Database } from '../db.js';
+import type { Database } from '../types/db.js';
 import { eq, and } from 'drizzle-orm';
 import { reviews, users } from '../schema.js';
 

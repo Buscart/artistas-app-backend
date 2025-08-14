@@ -1,6 +1,5 @@
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { getStorage } from 'firebase-admin/storage';
 import { getAuth } from 'firebase-admin/auth';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -21,14 +20,12 @@ if (!fs.existsSync(serviceAccountPath)) {
 const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
 
 const firebaseConfig = {
-  credential: cert(serviceAccount),
-  storageBucket: 'buscartpro-ecf88.firebasestorage.app'
+  credential: cert(serviceAccount)
 };
 
 // Inicializar Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-const storage = getStorage(app);
 const auth = getAuth(app);
 
-export { db, storage, auth };
+export { db, auth };

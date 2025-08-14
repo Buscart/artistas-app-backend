@@ -1,5 +1,6 @@
-import { Database } from '../db.js';
+import { db } from '../db.js';
 import { events, users, categories, venues, artists, messages, recommendations, favorites, blogPosts } from '../schema.js';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 export interface IStorage {
   // Category methods
@@ -45,5 +46,5 @@ export interface IStorage {
 }
 
 export interface StorageConfig {
-  db: Database;
+  db: PostgresJsDatabase<Record<string, unknown>>;
 }
