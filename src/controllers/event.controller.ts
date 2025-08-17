@@ -1,13 +1,14 @@
 import { Request, Response } from 'express';
-import { db } from '../db';
+import { db } from '../db.js';
 import { and, eq, gte, lte, ne, or, sql, SQL } from 'drizzle-orm';
 import type { SQLWrapper } from 'drizzle-orm';
-import { events, eventOccurrences, categories, users } from '../schema';
+import { events, eventOccurrences, categories, users } from '../schema.js';
 import { v4 as uuidv4 } from 'uuid';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { z } from 'zod';
-import { EventType } from '../types/event.types';
+// Tipo local para evitar dependencia a módulo inexistente
+type EventType = 'concert' | 'exhibition' | 'workshop' | 'festival' | 'conference' | 'theater' | 'dance' | 'other';
 
 // Definir interfaces para las entradas
 type CreateEventInput = {
@@ -119,7 +120,7 @@ const createEventSchema = z.object({
   endDate: z.string().datetime().optional(),
   timezone: z.string().default('America/Bogota'),
   isRecurring: z.boolean().default(false),
-  recurrencePattern: z.record(z.any()).optional(),
+  recurrencePattern: z.record(z.string(), z.any()).optional(),
   locationType: z.enum(['physical', 'online', 'hybrid']).default('physical'),
   address: z.string().optional(),
   city: z.string().optional(),

@@ -3,11 +3,11 @@ import { auth } from '../config/firebase.js';
 import type { DecodedIdToken } from 'firebase-admin/auth';
 import { db } from '../db.js';
 import { users } from '../schema.js';
-import { eq } from 'drizzle-orm/sql';
+import { eq } from 'drizzle-orm';
 import type { User, UserWithId } from '../types/user.types.js';
 
-// Importar la definición de tipos de Express para extender Request
-import '../types/express/index.d.js';
+// Nota: la extensión de tipos de Express se resuelve via typeRoots (tsconfig)
+// No es necesario importar archivos .d.ts en tiempo de ejecución
 
 // Declarar el módulo para extender el espacio de nombres de Express
 declare global {
@@ -40,10 +40,15 @@ export const authMiddleware = async (
   next: NextFunction
 ) => {
   try {
-    console.log('🔍 Iniciando autenticación...');
-    console.log('🔍 URL de la solicitud:', req.originalUrl);
-    console.log('🔍 Método de la solicitud:', req.method);
-    console.log('🔍 Headers recibidos:', JSON.stringify(req.headers, null, 2));
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Iniciando autenticación...');
+      console.log('🔍 URL de la solicitud:', req.originalUrl);
+      console.log('🔍 Método de la solicitud:', req.method);
+      console.log('🔍 Headers recibidos (sin Authorization):', JSON.stringify({
+        ...req.headers,
+        authorization: req.headers.authorization ? 'Bearer [REDACTED]' : undefined,
+      }, null, 2));
+    }
 
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -77,9 +82,11 @@ export const authMiddleware = async (
       });
     }
 
-    console.log('🔑 Token extraído (primeros 10 caracteres):', token.substring(0, 10) + '...');
-    console.log('🔑 Longitud del token:', token.length);
-    console.log('🔑 Verificando token con Firebase...');
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔑 Token extraído (primeros 10 caracteres):', token.substring(0, 10) + '...');
+      console.log('🔑 Longitud del token:', token.length);
+      console.log('🔑 Verificando token con Firebase...');
+    }
     
     // Verificar si el token parece ser un token JWT
     const jwtParts = token.split('.');
@@ -112,11 +119,13 @@ export const authMiddleware = async (
         }
       };
 
-      console.log('✅ Token verificado para:', {
-        uid: decodedToken.uid,
-        email: decodedToken.email,
-        provider: decodedToken.firebase.sign_in_provider
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Token verificado para:', {
+          uid: decodedToken.uid,
+          email: decodedToken.email,
+          provider: decodedToken.firebase.sign_in_provider
+        });
+      }
 
     } catch (error: any) {
       console.error('❌ Error al verificar token:', error.message);
@@ -129,7 +138,9 @@ export const authMiddleware = async (
 
     req.decodedToken = decodedToken;
 
-    console.log('🔍 Buscando usuario en DB:', decodedToken.uid);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Buscando usuario en DB:', decodedToken.uid);
+    }
 
     try {
       const [user] = await db
@@ -138,26 +149,32 @@ export const authMiddleware = async (
         .where(eq(users.id, decodedToken.uid))
         .limit(1);
 
+      let effectiveUser: any = user;
       if (!user) {
-        console.error('❌ Usuario no encontrado:', decodedToken.uid);
-        return res.status(404).json({
-          success: false,
-          error: 'Usuario no registrado',
-          code: 'USER_NOT_FOUND'
-        });
+        // Permitir que rutas protegidas creen el usuario (upsert) usando el uid del token
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('⚠️ Usuario no encontrado en DB, continuando con datos del token para permitir upsert:', decodedToken.uid);
+        }
+        effectiveUser = {
+          id: decodedToken.uid,
+          email: (decodedToken as any).email || null,
+          userType: 'general',
+        };
       }
 
-      const { id, email, userType, ...rest } = user;
+      const { id, email, userType, ...rest } = effectiveUser;
 
       // Usando type assertion para resolver temporalmente el conflicto de tipos
       req.user = {
         id,
         email,
-        userType: userType as 'artist' | 'general' | 'company',
+        userType: (userType || 'general') as 'artist' | 'general' | 'company',
         ...rest
       } as UserWithId;
 
-      console.log('✅ Usuario autenticado:', req.user);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('✅ Usuario autenticado:', { id: req.user.id, email: req.user.email, userType: req.user.userType });
+      }
 
       next();
     } catch (dbError: any) {

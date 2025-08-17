@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { AnyZodObject, z } from 'zod';
+import { z } from 'zod';
 
-export function validateRequest(schema: AnyZodObject, type: 'body' | 'query' | 'params' = 'body') {
+export function validateRequest(schema: z.ZodTypeAny, type: 'body' | 'query' | 'params' = 'body') {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const result = schema.safeParse(req[type]);
@@ -9,9 +9,9 @@ export function validateRequest(schema: AnyZodObject, type: 'body' | 'query' | '
       if (!result.success) {
         return res.status(400).json({
           success: false,
-          errors: result.error.errors.map(err => ({
-            path: err.path.join('.'),
-            message: err.message,
+          errors: result.error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            message: issue.message,
           })),
         });
       }

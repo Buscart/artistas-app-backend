@@ -1,15 +1,15 @@
 import { Request, Response } from 'express';
-import { db } from '../db';
-import { users, artists } from '../schema';
+import { db } from '../db.js';
+import { users, artists } from '../schema.js';
 import { eq, and, sql } from 'drizzle-orm';
 import { format } from 'date-fns';
-import type { User, Artist } from '../types/schema';
 
-interface ArtistWithDetails extends Omit<User, 'isFeatured' | 'rating' | 'totalReviews'> {
+// Tipo local flexible para respuesta enriquecida del artista
+interface ArtistWithDetails extends Record<string, any> {
   isFeatured: boolean;
   rating: number | null;
   totalReviews: number;
-  details: Artist | null;
+  details: any | null;
 }
 
 // Obtener artistas destacados

@@ -95,6 +95,13 @@ export class ArtistStorage {
     artistName: string;
     categoryId?: number | null;
     bio?: string | null;
+    description?: string | null;
+    subcategories?: string[];
+    tags?: string[];
+    availability?: Record<string, unknown> | null;
+    isAvailable?: boolean;
+    stageName?: string | null;
+    gallery?: unknown[];
     socialMedia?: Record<string, unknown>;
   }) {
     const [artist] = await this.db
@@ -104,9 +111,15 @@ export class ArtistStorage {
         artistName: data.artistName,
         categoryId: data.categoryId,
         bio: data.bio,
+        description: data.description ?? null,
+        subcategories: data.subcategories ?? [],
+        tags: data.tags ?? [],
+        availability: data.availability ?? {},
+        isAvailable: typeof data.isAvailable === 'boolean' ? data.isAvailable : true,
+        stageName: data.stageName ?? null,
+        gallery: Array.isArray(data.gallery) ? data.gallery : [],
         socialMedia: data.socialMedia || {},
         isVerified: false,
-        isAvailable: true,
         rating: '0',
         totalReviews: 0,
         fanCount: 0,
@@ -122,9 +135,15 @@ export class ArtistStorage {
     data: {
       categoryId?: number | null;
       bio?: string | null;
+      description?: string | null;
+      subcategories?: string[];
+      tags?: string[];
+      availability?: Record<string, unknown> | null;
       socialMedia?: Record<string, unknown>;
       isAvailable?: boolean;
       artistName?: string;
+      stageName?: string | null;
+      gallery?: unknown[];
     }
   ) {
     const [artist] = await this.db

@@ -1,11 +1,11 @@
 
 import { Request, Response } from 'express';
 import { sql } from 'drizzle-orm';
-import { AuthService, AuthenticationError } from '../services/auth.service';
-import { db } from '../db';
-import { users } from '../schema';
+import { AuthService, AuthenticationError } from '../services/auth.service.js';
+import { db } from '../db.js';
+import { users } from '../schema.js';
 import { eq } from 'drizzle-orm';
-import { auth } from '../config/firebase';
+import { auth } from '../config/firebase.js';
 
 export const authController = {
   async login(req: Request, res: Response) {

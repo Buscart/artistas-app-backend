@@ -1,31 +1,44 @@
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
+import * as path from 'path';
+import * as fs from 'fs';
 import { fileURLToPath } from 'url';
-import path from 'path';
-import fs from 'fs';
 
-// Obtener el directorio actual usando import.meta.url
+// Obtener __dirname en ES Modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Cargar el archivo de credenciales
-const serviceAccountPath = path.join(__dirname, 'firebase-admin.json');
+let auth: any;
 
-if (!fs.existsSync(serviceAccountPath)) {
-  throw new Error('No se encontró el archivo de credenciales de Firebase Admin');
+try {
+  // Cargar credenciales desde el archivo JSON
+  const credentialsPath = path.join(__dirname, 'firebase-credentials.json');
+  
+  if (!fs.existsSync(credentialsPath)) {
+    throw new Error('No se encontró el archivo de credenciales de Firebase');
+  }
+  
+  const serviceAccount = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+  
+  // Inicializar Firebase Admin con las credenciales
+  initializeApp({
+    credential: cert(serviceAccount)
+  });
+
+  auth = getAuth();
+  console.log('✅ Firebase Admin inicializado correctamente');
+} catch (error) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('⚠️  No se pudo inicializar Firebase Admin. Usando mock en desarrollo:', (error as Error).message);
+    auth = {
+      async verifyIdToken(_token: string) {
+        return { uid: 'dev-user' };
+      },
+    };
+  } else {
+    console.error('❌ Error crítico al inicializar Firebase Admin:', error);
+    throw error;
+  }
 }
 
-// Leer el archivo de credenciales
-const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-
-const firebaseConfig = {
-  credential: cert(serviceAccount)
-};
-
-// Inicializar Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-
-export { db, auth };
+export { auth };

@@ -127,18 +127,6 @@ const updateHiringResponseSchema = insertHiringResponseSchema.partial();
 import type { ParamsDictionary } from 'express-serve-static-core';
 import type { ParsedQs } from 'qs';
 
-interface AuthenticatedRequest extends Request {
-  user: {
-    id: string;
-    [key: string]: any;
-  };
-}
-
-type AuthenticatedRequestHandler = (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-) => Promise<void> | void;
 
 // WebSocket connection storage
 const wsConnections = new Map<string, WebSocket>();
@@ -192,6 +180,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching categories:", error);
       res.status(500).json({ message: "Failed to fetch categories" });
+    }
+  });
+
+  // Users routes (basic CRUD for profile and userType)
+  app.get('/api/users/:id', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const user = await storage.getUser(id);
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      res.json(user);
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      res.status(500).json({ message: 'Failed to fetch user' });
+    }
+  });
+
+  app.post('/api/users', async (req: any, res) => {
+    try {
+      const {
+        uid,
+        id,
+        email,
+        firstName,
+        lastName,
+        photoURL,
+        profileImageUrl,
+        userType,
+        bio,
+        city,
+        isVerified
+      } = req.body || {};
+
+      const newUser = await storage.upsertUser({
+        id: id || uid,
+        email,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
+        profileImageUrl: (profileImageUrl ?? photoURL) ?? null,
+        userType,
+        bio: bio ?? null,
+        city: city ?? null,
+        isVerified: isVerified ?? false,
+      });
+
+      res.status(201).json(newUser);
+    } catch (error) {
+      console.error('Error creating/upserting user:', error);
+      res.status(500).json({ message: 'Failed to create user' });
+    }
+  });
+
+  app.put('/api/users/:id', async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        email,
+        firstName,
+        lastName,
+        profileImageUrl,
+        photoURL,
+        userType,
+        bio,
+        city,
+        isVerified
+      } = req.body || {};
+
+      const updatedUser = await storage.upsertUser({
+        id,
+        email,
+        firstName: firstName ?? null,
+        lastName: lastName ?? null,
+        profileImageUrl: (profileImageUrl ?? photoURL) ?? null,
+        userType,
+        bio: bio ?? null,
+        city: city ?? null,
+        isVerified: isVerified ?? false,
+      });
+
+      res.json(updatedUser);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      res.status(500).json({ message: 'Failed to update user' });
     }
   });
 

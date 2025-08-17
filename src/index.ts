@@ -1,12 +1,19 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { rateLimit } from 'express-rate-limit';
+import helmet from 'helmet';
+import compression from 'compression';
+import type { RequestHandler } from 'express';
 import { createServer } from 'http';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { Express } from 'express';
+import { sql } from 'drizzle-orm';
 import apiRoutes from './routes/api.routes.js';
-import { db, runMigrations } from './db.js';
+import { db, dbReady } from './db.js';
 import { storage } from './storage/index.js';
+import { auth } from './config/firebase.js';
+import { URL } from 'url';
 
 // Extend Express types
 declare global {
@@ -23,29 +30,57 @@ const app = express() as Express;
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
 
-// Configuración de CORS
-const allowedOrigins: string[] = [
+// (El manejador de errores se declara más abajo, después de las rutas)
+
+// Configuración de CORS endurecida
+const isDev = process.env.NODE_ENV === 'development';
+const frontendUrl = process.env.FRONTEND_URL || '';
+const devOrigins = new Set([
   'http://localhost:3000',
   'http://localhost:3001',
-  'http://localhost:5173' // Añadido para desarrollo con Vite
-];
-
-// Añadir FRONTEND_URL si está definido
-if (process.env.FRONTEND_URL) {
-  allowedOrigins.push(process.env.FRONTEND_URL);
-}
+  'http://localhost:5173',
+]);
 
 const offerConnections = new Map<number, Set<WebSocket>>();
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
+  try {
+    // Extraer token del query ?token= o del header Authorization: Bearer XXX
+    const urlObj = new URL(req.url || '', 'http://localhost');
+    const queryToken = urlObj.searchParams.get('token') || '';
+    const headerAuth = (req.headers['authorization'] || '').toString();
+    const headerToken = headerAuth.startsWith('Bearer ')
+      ? headerAuth.substring('Bearer '.length)
+      : '';
+    const token = queryToken || headerToken;
+
+    if (!token) {
+      if (process.env.NODE_ENV === 'development') console.warn('WS sin token, cerrando');
+      ws.close(1008, 'Unauthorized');
+      return;
+    }
+
+    // Verificar token con Firebase Admin
+    const decoded = await auth.verifyIdToken(token);
+    (ws as any).userId = decoded.uid;
+  } catch (e) {
+    console.warn('WS auth failed:', (e as Error).message);
+    ws.close(1008, 'Unauthorized');
+    return;
+  }
+
   console.log('WebSocket connection established');
   
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message.toString());
       
-      if (data.type === 'subscribe' && data.offerId) {
-        const offerId = parseInt(data.offerId);
+      if (data.type === 'subscribe' && data.offerId !== undefined) {
+        const offerId = parseInt(String(data.offerId));
+        if (Number.isNaN(offerId) || offerId <= 0) {
+          ws.send(JSON.stringify({ type: 'error', message: 'offerId inválido' }));
+          return;
+        }
         
         if (!offerConnections.has(offerId)) {
           offerConnections.set(offerId, new Set());
@@ -148,37 +183,50 @@ app.broadcastStatusUpdate = async (offerId: number, responseId: number, status: 
 };
 
 // Configuración de middleware
+app.use(helmet());
+app.use(compression() as unknown as RequestHandler);
 app.use(cors({
   origin: (origin, callback) => {
-    // Si no hay origen (puede ser una solicitud del mismo origen o desde aplicaciones móviles)
-    if (!origin) return callback(null, true);
-    
-    // Verificar si el origen está permitido (comparación flexible)
-    const isAllowed = allowedOrigins.some((allowedOrigin: string) => {
-      if (!allowedOrigin) return false;
-      const cleanOrigin = allowedOrigin.replace(/^https?:\/\//, '');
-      return origin.startsWith(cleanOrigin) || origin.endsWith(cleanOrigin);
-    });
-    
-    if (isAllowed) {
-      return callback(null, true);
-    }
-    
-    // Origen no permitido
+    if (!origin) return callback(null, true); // same-origin o apps nativas
+
+    // En desarrollo: permitir orígenes locales conocidos
+    if (isDev && devOrigins.has(origin)) return callback(null, true);
+
+    // En producción: permitir solo FRONTEND_URL exacta
+    if (!isDev && frontendUrl && origin === frontendUrl) return callback(null, true);
+
     console.warn('Origen no permitido:', origin);
     return callback(new Error('Not allowed by CORS'));
   },
-  credentials: true, // Permitir cookies en las peticiones cross-origin
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['Content-Range', 'X-Total-Count']
 }));
 
-// Middleware para registrar solicitudes
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 300, // máximo 300 solicitudes por IP/ventana
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000, // 5 minutos
+  max: 30, // rutas sensibles (login/refresh)
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Middleware para registrar solicitudes (solo en desarrollo)
 app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
-  console.log('Headers:', req.headers);
-  console.log('Body:', req.body);
+  if (process.env.NODE_ENV === 'development') {
+    const redactedHeaders = { ...req.headers, authorization: req.headers.authorization ? 'Bearer [REDACTED]' : undefined };
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+    console.log('Headers:', redactedHeaders);
+    console.log('Body:', req.body);
+  }
   next();
 });
 
@@ -186,23 +234,11 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Servir archivos estáticos desde la carpeta uploads
-import path from 'path';
-import { fileURLToPath } from 'url';
+// Archivos estáticos locales eliminados: ahora los medios se sirven desde Supabase Storage
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Servir archivos estáticos desde la carpeta uploads en la raíz del proyecto
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
-
-// Middleware para manejo de errores
-app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Error:', err);
-  res.status(500).json({
-    error: 'Error interno del servidor',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
-});
+// Aplicar rate limiting
+app.use('/api/auth', authLimiter);
+app.use('/api', apiLimiter);
 
 // Rutas de la API
 app.use('/api', apiRoutes);
@@ -210,19 +246,23 @@ app.use('/api', apiRoutes);
 // Ruta de healthcheck
 app.get('/health', async (req, res) => {
   try {
-    // Verificar conexión a la base de datos
-    await db.execute('SELECT 1');
-    res.json({ 
-      status: 'ok', 
+    let dbStatus = 'not_configured';
+    if (dbReady && db) {
+      // Verificar conexión a la base de datos si está configurada
+      await db.execute(sql`select 1`);
+      dbStatus = 'connected';
+    }
+    res.json({
+      status: 'ok',
       timestamp: new Date().toISOString(),
-      database: 'connected'
+      database: dbStatus,
     });
   } catch (error) {
     console.error('❌ Error de conexión a la base de datos:', error);
     res.status(500).json({
       status: 'error',
       timestamp: new Date().toISOString(),
-      database: 'disconnected',
+      database: dbReady ? 'disconnected' : 'not_configured',
       error: 'No se pudo conectar a la base de datos'
     });
   }

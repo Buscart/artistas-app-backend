@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { db } from '../db';
-import { featuredItems } from '../schema';
+import { db } from '../db.js';
+import { featuredItems } from '../schema.js';
 import { eq, and } from 'drizzle-orm';
 
 export const createFeaturedItem = async (req: Request, res: Response) => {

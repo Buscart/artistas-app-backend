@@ -1,9 +1,8 @@
 import { Request, Response } from 'express';
-import { db } from '../db';
-import { blogPosts, users } from '../schema';
+import { db } from '../db.js';
+import { blogPosts, users } from '../schema.js';
 import { desc, eq } from 'drizzle-orm';
 import { format } from 'date-fns';
-import type { BlogPost as BlogPostType } from '../types/schema';
 
 interface BlogPostResponse {
   id: number;

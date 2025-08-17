@@ -8,43 +8,64 @@ import type { Database } from './types/db.js';
 // Cargar variables de entorno
 dotenv.config();
 
-// Verificar que DATABASE_URL esté definida
-if (!process.env.DATABASE_URL) {
-  console.error('❌ Error: DATABASE_URL no está definida en las variables de entorno');
-  throw new Error("DATABASE_URL must be set in your environment variables.");
-}
-
-console.log('🔍 Configurando conexión a la base de datos...');
-console.log('🔗 Host de la base de datos:', new URL(process.env.DATABASE_URL).hostname);
-
-// Crear el cliente de PostgreSQL
-const client = postgres(process.env.DATABASE_URL, {
-  ssl: {
-    rejectUnauthorized: false
-  },
-  max: 10, // Aumentar el número de conexiones
-  idle_timeout: 20,
-  max_lifetime: 60 * 30,
-});
-
-// Crear la instancia de Drizzle ORM
+// Declaración global al nivel superior
 declare global {
   // eslint-disable-next-line no-var
   var db: Database | undefined;
 }
 
-let db: Database;
+// Verificar y configurar base de datos
+const hasDatabaseUrl = Boolean(process.env.DATABASE_URL);
+let dbReady = false;
+let db: Database; // siempre definido (real o proxy)
+let client: ReturnType<typeof postgres> | undefined;
 
-if (process.env.NODE_ENV === 'production') {
-  db = drizzle(client, { schema });
-} else {
-  if (!global.db) {
-    global.db = drizzle(client, { schema });
+if (!hasDatabaseUrl) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.warn('⚠️  DATABASE_URL no definida. Ejecutando sin base de datos en desarrollo.');
+  } else {
+    console.error('❌ Error: DATABASE_URL no está definida en las variables de entorno');
+    // Crear un proxy que lance errores en tiempo de ejecución si se usa sin DB
+    db = new Proxy({}, {
+      get() {
+        throw new Error('Database not configured. Define DATABASE_URL para usar la base de datos.');
+      },
+      apply() {
+        throw new Error('Database not configured.');
+      },
+    }) as unknown as Database;
+    // dbReady permanece en false
   }
-  db = global.db;
+} else {
+  console.log('🔍 Configurando conexión a la base de datos...');
+  try {
+    console.log('🔗 Host de la base de datos:', new URL(process.env.DATABASE_URL!).hostname);
+  } catch {}
+
+  // Crear el cliente de PostgreSQL
+  client = postgres(process.env.DATABASE_URL!, {
+    ssl: {
+      rejectUnauthorized: false
+    },
+    max: 10,
+    idle_timeout: 20,
+    max_lifetime: 60 * 30,
+  });
+
+  if (process.env.NODE_ENV === 'production') {
+    db = drizzle(client, { schema }) as Database;
+  } else {
+    const g = globalThis as any;
+    if (!g.db) {
+      g.db = drizzle(client, { schema }) as Database;
+    }
+    db = g.db as Database;
+  }
+  dbReady = true;
 }
 
 export { db };
+export { dbReady };
 
 // Hot reload dev
 if (process.env.NODE_ENV !== 'production') {
@@ -52,7 +73,7 @@ if (process.env.NODE_ENV !== 'production') {
   if (import.meta.hot) {
     // @ts-ignore
     import.meta.hot.on('vite:beforeFullReload', () => {
-      client.end();
+      client?.end();
     });
   }
 }

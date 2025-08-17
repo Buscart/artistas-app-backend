@@ -170,7 +170,8 @@ export class DatabaseStorage implements IStorage {
       .onConflictDoUpdate({
         target: users.id,
         set: {
-          email: userData.email,
+          // Nota: solo actualizamos email si viene en la petición; de lo contrario se mantiene.
+          ...(typeof (user as any).email !== 'undefined' ? { email: userData.email } : {}),
           firstName: userData.firstName === null ? sql`NULL` : userData.firstName,
           lastName: userData.lastName === null ? sql`NULL` : userData.lastName,
           profileImageUrl: userData.profileImageUrl === null ? sql`NULL` : userData.profileImageUrl,
@@ -251,18 +252,14 @@ export class DatabaseStorage implements IStorage {
       // Execute the query
       const results = await query;
       
-      // Transform and return the results
-      return results.map(row => {
-        if (!row.users) {
-          throw new Error('User not found for artist');
-        }
-        
-        return {
+      // Transform and return the results (omit orphan rows without user)
+      return results
+        .filter(row => !!row.users)
+        .map(row => ({
           ...row.artists,
-          user: row.users,
+          user: row.users!,
           category: row.categories || undefined
-        };
-      });
+        }));
     } catch (error) {
       console.error('Error fetching artists:', error);
       throw new Error('Failed to fetch artists');

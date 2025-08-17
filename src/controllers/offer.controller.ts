@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { db } from '../db';
-import { offers, users, artists } from '../schema';
+import { db } from '../db.js';
+import { offers, users, artists } from '../schema.js';
 import { eq, and, or, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -68,7 +68,6 @@ export const createOffer = async (req: Request, res: Response) => {
       .insert(offers)
       .values({
         clientId: clientId,
-        title: result.data.title || `${result.data.category} - ${result.data.description.substring(0, 30)}...`,
         artistId: result.data.artistId || null,
         category: result.data.category,
         description: result.data.description,
@@ -79,8 +78,6 @@ export const createOffer = async (req: Request, res: Response) => {
         eventTime: result.data.eventTime || null,
         location: result.data.location || null,
         status: 'pending',
-        createdAt: new Date(),
-        updatedAt: new Date(),
       })
       .returning();
 

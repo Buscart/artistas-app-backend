@@ -2,9 +2,10 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { PostService } from '../services/post.service.js';
-import { upload } from '../config/multer.js';
 import { validateRequest } from '../middleware/validation.middleware.js';
 import { UserWithId } from '../types/user.types.js';
+import multer from 'multer';
+import { uploadMediaFiles } from '../services/storage.service.js';
 
 // Extender el tipo Request de Express para incluir user
 declare global {
@@ -16,6 +17,23 @@ declare global {
 }
 
 const router = Router();
+
+// Configurar Multer con almacenamiento en memoria (los archivos se suben a Supabase)
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'video/mp4', 'video/webm', 'video/quicktime',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (allowed.includes(file.mimetype)) return cb(null, true);
+    cb(new Error('Tipo de archivo no permitido'));
+  },
+});
 
 // Función de ayuda para obtener archivos de la solicitud
 function getUploadedFiles(req: Request): Express.Multer.File[] {
@@ -35,7 +53,7 @@ const createPostSchema = z.object({
 router.post(
   '/',
   authMiddleware,
-  upload.array('media', 10), // Permitir hasta 10 archivos
+  memoryUpload.array('media', 10), // Permitir hasta 10 archivos
   validateRequest(createPostSchema, 'body'),
   async (req, res, next) => {
     try {
@@ -46,14 +64,9 @@ router.post(
 
       const { content, type, isPublic } = req.body;
       
-      // Procesar archivos subidos
+      // Subir archivos a Supabase Storage y construir metadatos
       const uploadedFiles = getUploadedFiles(req);
-      const mediaFiles = uploadedFiles.map((file) => ({
-        url: file.path,
-        type: file.mimetype.split('/')[0] as 'image' | 'video' | 'application',
-        thumbnailUrl: file.mimetype.startsWith('image/') ? file.path : null,
-        order: 0, // Podrías implementar lógica para el orden
-      }));
+      const mediaFiles = await uploadMediaFiles(uploadedFiles, 'posts');
 
       // Usar el método estático directamente
       const post = await PostService.createPost(
@@ -189,7 +202,7 @@ router.delete('/:id', authMiddleware, async (req, res, next) => {
 router.post(
   '/:id/media',
   authMiddleware,
-  upload.array('media', 10),
+  memoryUpload.array('media', 10),
   async (req, res, next) => {
     try {
       const postId = parseInt(req.params.id);
@@ -200,12 +213,7 @@ router.post(
       }
 
       const uploadedFiles = getUploadedFiles(req);
-      const mediaFiles = uploadedFiles.map((file) => ({
-        url: file.path,
-        type: file.mimetype.split('/')[0] as 'image' | 'video' | 'application',
-        thumbnailUrl: file.mimetype.startsWith('image/') ? file.path : null,
-        order: 0,
-      }));
+      const mediaFiles = await uploadMediaFiles(uploadedFiles, 'posts');
 
       // Usar el método estático directamente
       const result = await PostService.addMediaToPost(postId, userId, mediaFiles);

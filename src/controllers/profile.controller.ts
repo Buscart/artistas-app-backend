@@ -1,20 +1,9 @@
 import { Request, Response } from 'express';
-import { db } from '../db';
-import { users, artists, companies, reviews } from '../schema';
+import { db } from '../db.js';
+import { users, artists, companies, reviews } from '../schema.js';
 import { eq, and, or, desc, sql } from 'drizzle-orm';
-import type { User, Artist } from '../types/schema';
 
-// Interfaz extendida para el perfil completo
-export interface FullProfile extends User {
-  artist?: Artist | null;
-  company?: any | null;
-  stats?: {
-    totalReviews: number;
-    averageRating: number;
-    totalEvents?: number;
-    yearsExperience?: number;
-  };
-}
+// Nota: Se removieron tipos externos no definidos (User, Artist) para evitar conflictos de compilación.
 
 // Obtener todos los perfiles con filtros
 export const getProfiles = async (req: Request, res: Response) => {
