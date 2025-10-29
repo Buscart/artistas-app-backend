@@ -15,7 +15,7 @@ export class UserStorage {
   }
 
   async getUsers(filters: {
-    userType?: 'general' | 'artist'
+    userType?: 'general' | 'artist' | 'company'
   }): Promise<typeof users.$inferSelect[]> {
     const query = this.db.select().from(users);
     
@@ -33,7 +33,7 @@ export class UserStorage {
     lastName?: string;
     username?: string;
     profileImageUrl?: string | null;
-    userType?: 'general' | 'artist';
+    userType?: 'general' | 'artist' | 'company';
     bio?: string | null;
     city?: string | null;
     isVerified?: boolean;

@@ -1,5 +1,5 @@
-import { db } from '../db';
-import { profileViews, follows, userActivities } from '../schema';
+import { db } from '../db.js';
+import { profileViews, follows, userActivities } from '../schema.js';
 import { eq, sql, and, gte } from 'drizzle-orm';
 
 export class AnalyticsService {

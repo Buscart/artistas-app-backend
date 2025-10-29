@@ -9,7 +9,7 @@ export class ActivityController {
    */
   async getRecentActivities(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -29,7 +29,7 @@ export class ActivityController {
    */
   async markActivitiesAsRead(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -53,7 +53,7 @@ export class ActivityController {
    */
   async getNotifications(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -73,7 +73,7 @@ export class ActivityController {
    */
   async markNotificationAsRead(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -93,7 +93,7 @@ export class ActivityController {
    */
   async followUser(req: Request, res: Response) {
     try {
-      const followerId = req.user?.uid;
+      const followerId = req.user?.id;
       if (!followerId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -113,7 +113,7 @@ export class ActivityController {
    */
   async unfollowUser(req: Request, res: Response) {
     try {
-      const followerId = req.user?.uid;
+      const followerId = req.user?.id;
       if (!followerId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -133,7 +133,7 @@ export class ActivityController {
    */
   async getFollowersCount(req: Request, res: Response) {
     try {
-      const userId = req.params.userId || req.user?.uid;
+      const userId = req.params.userId || req.user?.id;
       if (!userId) {
         return res.status(400).json({ error: 'userId requerido' });
       }
@@ -153,7 +153,7 @@ export class ActivityController {
   async recordProfileView(req: Request, res: Response) {
     try {
       const profileId = req.params.userId;
-      const viewerId = req.user?.uid;
+      const viewerId = req.user?.id;
       const viewerIp = req.ip;
 
       await activityService.recordProfileView(profileId, viewerId, viewerIp);
@@ -170,7 +170,7 @@ export class ActivityController {
    */
   async getProfileViewsCount(req: Request, res: Response) {
     try {
-      const userId = req.params.userId || req.user?.uid;
+      const userId = req.params.userId || req.user?.id;
       if (!userId) {
         return res.status(400).json({ error: 'userId requerido' });
       }
@@ -190,7 +190,7 @@ export class ActivityController {
    */
   async getUserAchievements(req: Request, res: Response) {
     try {
-      const userId = req.params.userId || req.user?.uid;
+      const userId = req.params.userId || req.user?.id;
       if (!userId) {
         return res.status(400).json({ error: 'userId requerido' });
       }
@@ -209,7 +209,7 @@ export class ActivityController {
    */
   async getAllAchievements(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid; // Opcional
+      const userId = req.user?.id; // Opcional
       const achievements = await activityService.getAllAchievements(userId);
 
       res.json(achievements);
@@ -224,7 +224,7 @@ export class ActivityController {
    */
   async getProfileProgress(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -243,7 +243,7 @@ export class ActivityController {
    */
   async getProfileCompleteness(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -262,12 +262,14 @@ export class ActivityController {
    */
   async getDashboardStats(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
 
-      // Obtener todas las estadísticas en paralelo
+      console.log('📊 Getting dashboard stats for user:', userId);
+
+      // Obtener todas las estadísticas en paralelo con manejo de errores individual
       const [
         activities,
         progress,
@@ -277,20 +279,43 @@ export class ActivityController {
         notifications,
         suggestedUsers
       ] = await Promise.all([
-        activityService.getRecentActivities(userId, 5),
-        profileProgressService.getProgressStats(userId),
-        activityService.getFollowersCount(userId),
-        activityService.getProfileViewsCount(userId, 7),
-        activityService.getUserAchievements(userId),
-        activityService.getNotifications(userId, 5),
-        recommendationsService.getSuggestedUsers(userId, 3)
+        activityService.getRecentActivities(userId, 5).catch((e: any) => {
+          console.error('❌ Error loading activities:', e.message);
+          return [];
+        }),
+        profileProgressService.getProgressStats(userId).catch((e: any) => {
+          console.error('❌ Error loading progress:', e.message);
+          return { percentage: 0, completedFields: [], missingFields: [] };
+        }),
+        activityService.getFollowersCount(userId).catch((e: any) => {
+          console.error('❌ Error loading followers count:', e.message);
+          return 0;
+        }),
+        activityService.getProfileViewsCount(userId, 7).catch((e: any) => {
+          console.error('❌ Error loading views count:', e.message);
+          return 0;
+        }),
+        activityService.getUserAchievements(userId).catch((e: any) => {
+          console.error('❌ Error loading achievements:', e.message);
+          return [];
+        }),
+        activityService.getNotifications(userId, 5).catch((e: any) => {
+          console.error('❌ Error loading notifications:', e.message);
+          return [];
+        }),
+        recommendationsService.getSuggestedUsers(userId, 3).catch((e: any) => {
+          console.error('❌ Error loading suggested users:', e.message);
+          return [];
+        })
       ]);
+
+      console.log('✅ Dashboard stats loaded successfully');
 
       // Obtener último logro desbloqueado
       const latestAchievement = achievements.length > 0 ? achievements[0] : null;
 
       // Contar notificaciones no leídas
-      const unreadNotifications = notifications.filter(n => !n.isRead).length;
+      const unreadNotifications = notifications.filter((n: any) => !n.isRead).length;
 
       res.json({
         recentActivities: activities,
@@ -304,7 +329,8 @@ export class ActivityController {
         suggestedUsers,
       });
     } catch (error: any) {
-      console.error('Error getting dashboard stats:', error);
+      console.error('❌ Error getting dashboard stats:', error);
+      console.error('❌ Error stack:', error?.stack);
       res.status(500).json({ error: error.message });
     }
   }
@@ -314,7 +340,7 @@ export class ActivityController {
    */
   async getSuggestedUsers(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -349,7 +375,7 @@ export class ActivityController {
    */
   async getSimilarUsers(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }

@@ -289,7 +289,7 @@ router.get('/profile/completeness', authenticateToken, activityController.getPro
  *                 suggestedUsers:
  *                   type: array
  */
-router.get('/dashboard/stats', authenticateToken, activityController.getDashboardStats.bind(activityController));
+router.get('/stats', authenticateToken, activityController.getDashboardStats.bind(activityController));
 
 /**
  * @swagger

@@ -3,7 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { hiringRequests, hiringResponses } from '../schema.js';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-type HiringRequestStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
+type HiringRequestStatus = 'pending' | 'accepted' | 'rejected' | 'completed';
 
 export class HiringStorage {
   constructor(private db: PostgresJsDatabase<Record<string, unknown>>) {}
@@ -12,7 +12,7 @@ export class HiringStorage {
     const results = await this.db
       .select()
       .from(hiringRequests)
-      .where(eq(hiringRequests.status, 'open'));
+      .where(eq(hiringRequests.status, 'pending'));
 
     return results;
   }
@@ -51,7 +51,7 @@ export class HiringStorage {
         venueId: request.venueId,
         eventDate: request.eventDate.toLocaleDateString('en-CA'),
         details: request.details,
-        status: 'open',
+        status: 'pending',
         createdAt: new Date(),
         updatedAt: new Date()
       })
@@ -67,7 +67,7 @@ export class HiringStorage {
     accepted: boolean;
     message?: string;
   }) {
-    const status: HiringRequestStatus = response.accepted ? 'in_progress' : 'cancelled';
+    const status: HiringRequestStatus = response.accepted ? 'accepted' : 'rejected';
 
     const [result] = await this.db
       .insert(hiringResponses)

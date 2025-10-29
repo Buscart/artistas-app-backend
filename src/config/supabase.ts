@@ -6,8 +6,8 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Validar que las variables de entorno estén definidas
 if (!supabaseUrl || !supabaseServiceRoleKey) {
-  if (process.env.NODE_ENV === 'test') {
-    console.warn('⚠️  Advertencia: Usando credenciales de prueba para Supabase');
+  if (process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') {
+    console.warn('⚠️  Advertencia: Usando credenciales de prueba para Supabase (modo ' + process.env.NODE_ENV + ')');
   } else {
     throw new Error('Las variables de entorno SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY son requeridas');
   }

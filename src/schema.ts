@@ -10,7 +10,7 @@ export const users = pgTable('users', {
   displayName: varchar('display_name'), // Para nombre artístico o nombre de empresa
   profileImageUrl: varchar('profile_image_url'),
   coverImageUrl: varchar('cover_image_url'),
-  userType: varchar('user_type', { enum: ['general', 'artist'] }).notNull().default('general'), // Eliminado 'company'
+  userType: varchar('user_type', { enum: ['general', 'artist', 'company'] }).notNull().default('general'),
   bio: text('bio'),
   city: varchar('city'),
   address: text('address'),
@@ -704,7 +704,7 @@ export const hiringResponses = pgTable('hiring_responses', {
   artistId: integer('artist_id').notNull().references(() => artists.id),
   proposal: text('proposal').notNull(),
   message: text('message'),
-  status: varchar('status', { enum: ['open', 'in_progress', 'completed', 'cancelled'] }).default('open'),
+  status: varchar('status', { enum: ['pending', 'accepted', 'rejected', 'completed'] }).default('pending'),
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });

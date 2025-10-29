@@ -29,7 +29,7 @@ async function runMigrations() {
     const db = drizzle(sql);
 
     // Ejecutar migraciones
-    await migrate(db, { migrationsFolder: './migrations' });
+    await migrate(db, { migrationsFolder: './drizzle' });
     
     console.log('✅ Migraciones aplicadas correctamente');
   } catch (error) {

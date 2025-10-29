@@ -20,6 +20,9 @@ import { userController } from '../controllers/user.controller.js';
 // Importar controladores de elementos destacados
 import * as featuredController from '../controllers/featured.controller.js';
 
+// Importar rutas del dashboard (comentado - conflicto con activityRoutes)
+// import dashboardRoutes from './dashboard.routes.js';
+
 // Importar controladores de ofertas
 import { offerController } from '../controllers/offer.controller.js';
 
@@ -43,6 +46,9 @@ import activityRoutes from './activity.routes.js';
 
 // Importar rutas de analytics
 import analyticsRoutes from './analytics.routes.js';
+
+// Importar rutas de estadísticas
+import statsRoutes from './stats.routes.js';
 
 // Importar rutas
 import authRoutes from './auth.routes.js';
@@ -136,10 +142,13 @@ v1.use('/notifications', activityRoutes);
 v1.use('/users', activityRoutes);
 v1.use('/achievements', activityRoutes);
 v1.use('/dashboard', activityRoutes);
-v1.use('/recommendations', activityRoutes);
+v1.use('/activity', activityRoutes);
 
 // Rutas de analytics
 v1.use('/analytics', analyticsRoutes);
+
+// Rutas de estadísticas
+v1.use(statsRoutes);
 
 // Rutas de jerarquía de artistas (Disciplinas, Roles, Especializaciones, TADs, Stats)
 v1.use('/', artistHierarchyRoutes);
@@ -320,6 +329,9 @@ protectedRoutes.put('/artist/me', (async (req: any, res: Response) => {
   }
 }) as RouteHandler);
 
+// Rutas del dashboard (comentado - conflicto con activityRoutes que ya maneja /dashboard/stats)
+// v1.use('/dashboard', dashboardRoutes);
+
 // Rutas de ofertas
 v1.post('/offers', offerController.create as RouteHandler);
 v1.get('/offers', offerController.getAll as RouteHandler);
@@ -330,6 +342,9 @@ v1.patch('/offers/:id/status', offerController.updateStatus as RouteHandler);
 v1.get('/profiles', profileController.getAll as RouteHandler);
 v1.get('/profiles/:id', profileController.getById as RouteHandler);
 v1.get('/profiles/:id/reviews', profileController.getReviews as RouteHandler);
+
+// Ruta pública de perfil completo (con trabajos destacados)
+v1.get('/profile/public/:id', profileController.getPublic as RouteHandler);
 
 // Montar rutas protegidas en v1
 v1.use(protectedRoutes);

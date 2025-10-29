@@ -10,7 +10,7 @@ const router = Router();
  */
 router.get('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.uid;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
@@ -29,7 +29,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
  */
 router.put('/', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.uid;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
@@ -60,7 +60,7 @@ router.put('/', authMiddleware, async (req: Request, res: Response) => {
  */
 router.post('/categories/add', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.uid;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }
@@ -84,7 +84,7 @@ router.post('/categories/add', authMiddleware, async (req: Request, res: Respons
  */
 router.post('/categories/remove', authMiddleware, async (req: Request, res: Response) => {
   try {
-    const userId = req.user?.uid;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'Usuario no autenticado' });
     }

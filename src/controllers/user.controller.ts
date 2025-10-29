@@ -65,6 +65,7 @@ export const userController = {
         address,
         isVerified,
         userType,
+        onboardingCompleted,
       } = req.body || {};
 
       // Validar userType opcionalmente
@@ -89,6 +90,7 @@ export const userController = {
       if (address !== undefined) updateData.address = address;
       if (isVerified !== undefined) updateData.isVerified = isVerified;
       if (safeUserType !== undefined) updateData.userType = safeUserType;
+      if (onboardingCompleted !== undefined) updateData.onboardingCompleted = onboardingCompleted;
 
       console.log('🔵 updateProfile - updateData:', JSON.stringify(updateData, null, 2));
 

@@ -1,5 +1,5 @@
-import { db } from '../db';
-import { users, artists } from '../schema';
+import { db } from '../db.js';
+import { users, artists } from '../schema.js';
 import { eq } from 'drizzle-orm';
 
 export interface ProfileCompleteness {

@@ -132,7 +132,7 @@ export class AuthService {
       password: hashedPassword,
       firstName: defaultFirstName,
       lastName: lastName || null,
-      userType: userType as 'general' | 'artist',
+      userType: userType as 'general' | 'artist' | 'company',
       city: city || null,
       phone: phone || null,
       isVerified: false,

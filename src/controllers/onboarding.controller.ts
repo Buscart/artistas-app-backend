@@ -99,12 +99,18 @@ export const onboardingController = {
   // Guardar progreso del onboarding
   async saveOnboardingProgress(req: any, res: Response) {
     try {
+      console.log('💾 saveOnboardingProgress - Inicio');
+      console.log('🔍 req.user:', req.user);
       const userId = req.user?.id;
+      console.log('🔍 userId:', userId);
+
       if (!userId) {
+        console.error('❌ No hay userId');
         return res.status(401).json({ message: 'No autenticado' });
       }
 
       const { step, data, userType } = req.body;
+      console.log('📦 Datos recibidos:', { step, data, userType });
 
       // Obtener datos actuales del usuario para combinarlos
       const currentUser = await storage.db
@@ -137,30 +143,43 @@ export const onboardingController = {
         updateData.userType = userType;
       }
 
+      console.log('💾 Actualizando usuario con:', updateData);
       await storage.db
         .update(users)
         .set(updateData)
         .where(eq(users.id, userId));
 
+      console.log('✅ Progreso guardado exitosamente');
       return res.json({
         success: true,
         message: 'Progreso guardado exitosamente',
       });
-    } catch (error) {
-      console.error('Error al guardar progreso de onboarding:', error);
-      return res.status(500).json({ message: 'Error al guardar progreso' });
+    } catch (error: any) {
+      console.error('❌ Error al guardar progreso de onboarding:', error);
+      console.error('❌ Error message:', error?.message);
+      console.error('❌ Error stack:', error?.stack);
+      return res.status(500).json({
+        message: 'Error al guardar progreso',
+        error: error?.message || 'Error desconocido',
+        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      });
     }
   },
 
   // Completar onboarding
   async completeOnboarding(req: any, res: Response) {
     try {
+      console.log('🚀 completeOnboarding - Inicio');
       const userId = req.user?.id;
+      console.log('🔍 userId:', userId);
+
       if (!userId) {
+        console.error('❌ No hay userId');
         return res.status(401).json({ message: 'No autenticado' });
       }
 
       const { userType, finalData } = req.body;
+      console.log('📦 req.body:', JSON.stringify(req.body, null, 2));
 
       // Actualizar usuario
       const updateData: any = {
@@ -176,10 +195,30 @@ export const onboardingController = {
       if (finalData?.firstName) updateData.firstName = finalData.firstName;
       if (finalData?.lastName) updateData.lastName = finalData.lastName;
       if (finalData?.username) {
-        updateData.username = finalData.username;
-        // Si es artista y no tiene firstName, usar username como displayName
-        if (userType === 'artist' && !finalData?.firstName) {
-          updateData.displayName = finalData.username;
+        // Verificar si el username ya existe (y no es del usuario actual)
+        try {
+          const existingUser = await storage.db
+            .select({ id: users.id })
+            .from(users)
+            .where(eq(users.username, finalData.username))
+            .limit(1);
+
+          if (existingUser.length > 0 && existingUser[0].id !== userId) {
+            console.error('❌ Username ya existe:', finalData.username);
+            return res.status(400).json({
+              message: 'El nombre de usuario ya está en uso',
+              field: 'username'
+            });
+          }
+
+          updateData.username = finalData.username;
+          // Si es artista y no tiene firstName, usar username como displayName
+          if (userType === 'artist' && !finalData?.firstName) {
+            updateData.displayName = finalData.username;
+          }
+        } catch (usernameError) {
+          console.error('❌ Error verificando username:', usernameError);
+          throw usernameError;
         }
       }
       if (finalData?.city) updateData.city = finalData.city;
@@ -187,13 +226,16 @@ export const onboardingController = {
       if (finalData?.interestedCategories) updateData.interestedCategories = finalData.interestedCategories;
       if (finalData?.interestedTags) updateData.interestedTags = finalData.interestedTags;
 
+      console.log('💾 Actualizando usuario con updateData:', JSON.stringify(updateData, null, 2));
       await storage.db
         .update(users)
         .set(updateData)
         .where(eq(users.id, userId));
+      console.log('✅ Usuario actualizado correctamente');
 
       // Si es artista, crear o actualizar perfil de artista
       if (userType === 'artist') {
+        console.log('🎨 El usuario es artista, procesando perfil de artista...');
         const existingArtist = await storage.db
           .select()
           .from(artists)
@@ -221,6 +263,7 @@ export const onboardingController = {
         const artistData = {
           userId,
           artistName: finalData?.username || 'Artista',
+          stageName: finalData?.stageName || finalData?.username || null,
           categoryId,
           disciplineId,
           roleId,
@@ -256,6 +299,7 @@ export const onboardingController = {
       // Determinar redirección
       const redirectTo = userType === 'artist' ? '/dashboard' : '/dashboard';
 
+      console.log('🎉 Onboarding completado exitosamente');
       return res.json({
         success: true,
         message: 'Onboarding completado exitosamente',
@@ -266,9 +310,15 @@ export const onboardingController = {
           redirectTo,
         },
       });
-    } catch (error) {
-      console.error('Error al completar onboarding:', error);
-      return res.status(500).json({ message: 'Error al completar onboarding' });
+    } catch (error: any) {
+      console.error('❌ Error al completar onboarding:', error);
+      console.error('❌ Error stack:', error?.stack);
+      console.error('❌ Error message:', error?.message);
+      return res.status(500).json({
+        message: 'Error al completar onboarding',
+        error: error?.message || 'Error desconocido',
+        details: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      });
     }
   },
 

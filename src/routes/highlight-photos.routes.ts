@@ -7,7 +7,7 @@ import {
   deleteHighlightPhoto,
   checkHighlightPhotosComplete,
 } from '../controllers/highlight-photos.controller.js';
-import { authenticateToken } from '../middleware/auth.middleware.js';
+import { authMiddleware as authenticateToken } from '../middleware/auth.middleware.js';
 
 const router = Router();
 

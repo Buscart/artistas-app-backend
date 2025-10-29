@@ -119,6 +119,7 @@ export class DatabaseStorage implements IStorage {
       bio: string | null;
       city: string | null;
       isVerified: boolean;
+      onboardingCompleted: boolean;
     }>
   ): Promise<UserWithRelations> {
     const now = new Date();
@@ -144,6 +145,7 @@ export class DatabaseStorage implements IStorage {
       if (user.bio !== undefined) updateData.bio = user.bio;
       if (user.city !== undefined) updateData.city = user.city;
       if (user.isVerified !== undefined) updateData.isVerified = user.isVerified;
+      if (user.onboardingCompleted !== undefined) updateData.onboardingCompleted = user.onboardingCompleted;
       
       const [result] = await this.db
         .update(users)

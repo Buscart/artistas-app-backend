@@ -11,11 +11,9 @@ export const getProfiles = async (req: Request, res: Response) => {
     const { category, city, minRating, limit = '10', offset = '0' } = req.query;
     
     // Construir condiciones base
+    // Solo buscar artistas verificados (las empresas se manejan por tabla companies separada)
     const conditions = [
-      or(
-        eq(users.userType, 'artist'),
-        eq(users.userType, 'company')
-      ),
+      eq(users.userType, 'artist'),
       eq(users.isVerified, true)
     ];
 
@@ -82,14 +80,8 @@ export const getProfiles = async (req: Request, res: Response) => {
               totalEvents: artist.viewCount ? Math.floor(Number(artist.viewCount) / 2) : 0
             };
           }
-        } else if (profile.userType === 'company' && profile.id) {
-          // Lógica para empresas si es necesario
-          profileData.stats = {
-            totalReviews: profile.totalReviews,
-            averageRating: profile.rating
-          };
         }
-        
+
         return profileData;
       })
     );
@@ -137,14 +129,8 @@ export const getProfileById = async (req: Request, res: Response) => {
           totalEvents: artist.viewCount ? Math.floor(Number(artist.viewCount) / 2) : 0
         };
       }
-    } else if (profile.userType === 'company') {
-      // Lógica para empresas si es necesario
-      profileData.stats = {
-        totalReviews: Number(profile.totalReviews) || 0,
-        averageRating: Number(profile.rating) || 0
-      };
     }
-    
+
     res.json(profileData);
   } catch (error) {
     console.error('Error al obtener perfil:', error);
@@ -247,9 +233,121 @@ export const getProfileReviews = async (req: Request, res: Response) => {
   }
 };
 
+// Obtener perfil público completo (con trabajos destacados y toda la información)
+export const getPublicProfile = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // Obtener datos básicos del usuario
+    const [profile] = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, id))
+      .limit(1);
+
+    if (!profile) {
+      return res.status(404).json({ message: 'Perfil no encontrado' });
+    }
+
+    const profileData: any = {
+      id: profile.id,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      username: profile.username,
+      displayName: profile.displayName,
+      userType: profile.userType,
+      profileImageUrl: profile.profileImageUrl,
+      coverImageUrl: profile.coverImageUrl,
+      city: profile.city,
+      bio: profile.bio,
+      shortBio: profile.shortBio,
+      rating: profile.rating,
+      projectsCompleted: 0, // TODO: implementar sistema de proyectos
+      reviewsCount: profile.totalReviews,
+      followersCount: profile.fanCount || 0,
+      followingCount: 0, // TODO: implementar sistema de following
+      isVerified: profile.isVerified,
+      createdAt: profile.createdAt,
+    };
+
+    // Obtener detalles adicionales según el tipo de perfil
+    if (profile.userType === 'artist') {
+      const [artist] = await db
+        .select()
+        .from(artists)
+        .where(eq(artists.userId, id));
+
+      if (artist) {
+        // Formatear datos del artista con información de categorías
+        profileData.artistData = {
+          stageName: artist.stageName,
+          professionalTitle: artist.stageName || artist.artistName, // Usar stageName o artistName como título
+          category: artist.categoryId ? {
+            id: artist.categoryId,
+            code: artist.categoryId.toString(),
+            name: 'Categoría' // TODO: obtener nombre real de la categoría
+          } : null,
+          discipline: artist.disciplineId ? {
+            id: artist.disciplineId,
+            code: artist.disciplineId.toString(),
+            name: 'Disciplina' // TODO: obtener nombre real
+          } : null,
+          role: artist.roleId ? {
+            id: artist.roleId,
+            code: artist.roleId.toString(),
+            name: 'Rol' // TODO: obtener nombre real
+          } : null,
+          specialization: artist.specializationId ? {
+            id: artist.specializationId,
+            code: artist.specializationId.toString(),
+            name: 'Especialización' // TODO: obtener nombre real
+          } : null,
+          yearsOfExperience: artist.yearsOfExperience,
+          availability: artist.availability || {},
+          tags: artist.tags || [],
+          portfolioUrl: null, // El portfolio se obtiene desde portfolioPhotos
+          baseCity: artist.baseCity || profile.city,
+        };
+
+        // Obtener trabajos destacados del portafolio
+        try {
+          // Usar consulta SQL directa para evitar problemas de tipos
+          const featuredWorkResult: any = await db.execute(sql`
+            SELECT *
+            FROM portfolio_photos
+            WHERE user_id = ${id}
+              AND is_featured = true
+              AND is_public = true
+            ORDER BY order_position ASC
+            LIMIT 4
+          `);
+          profileData.featuredWork = Array.isArray(featuredWorkResult) ? featuredWorkResult : [];
+        } catch (error) {
+          console.error('Error al obtener trabajos destacados:', error);
+          profileData.featuredWork = [];
+        }
+
+        // Calcular estadísticas públicas
+        profileData.stats = {
+          totalProjects: 0, // TODO: implementar contador de proyectos
+          totalReviews: Number(profile.totalReviews) || 0,
+          averageRating: Number(profile.rating) || 0,
+          responseTime: '< 24h', // TODO: calcular tiempo de respuesta real
+        };
+      }
+    }
+
+    res.json(profileData);
+  } catch (error) {
+    console.error('Error al obtener perfil público:', error);
+    res.status(500).json({ message: 'Error al obtener el perfil público' });
+  }
+};
+
 // Controlador para compatibilidad con rutas
 export const profileController = {
   getAll: getProfiles,
   getById: getProfileById,
-  getReviews: getProfileReviews
+  getReviews: getProfileReviews,
+  getPublic: getPublicProfile
 };

@@ -1,5 +1,5 @@
-import { db } from '../db';
-import { userActivities, notifications, follows, profileViews, achievements, userAchievements, users } from '../schema';
+import { db } from '../db.js';
+import { userActivities, notifications, follows, profileViews, achievements, userAchievements, users } from '../schema.js';
 import { eq, desc, and, sql, count, inArray } from 'drizzle-orm';
 
 export class ActivityService {

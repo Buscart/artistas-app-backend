@@ -7,7 +7,7 @@ export class AnalyticsController {
    */
   async getProfileViewsByDay(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -27,7 +27,7 @@ export class AnalyticsController {
    */
   async getFollowersGrowthByDay(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -47,7 +47,7 @@ export class AnalyticsController {
    */
   async getEngagementStats(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -67,7 +67,7 @@ export class AnalyticsController {
    */
   async getActivityDistribution(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }
@@ -87,7 +87,7 @@ export class AnalyticsController {
    */
   async getAnalyticsSummary(req: Request, res: Response) {
     try {
-      const userId = req.user?.uid;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ error: 'No autenticado' });
       }

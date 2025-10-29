@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { storage } from '../storage/index.js';
 import { eq, and } from 'drizzle-orm';
 import { companies } from '../schema.js';
@@ -6,22 +6,74 @@ import { companies } from '../schema.js';
 export const companyController = {
   // Obtener todas las empresas del usuario autenticado
   async getMyCompanies(req: any, res: Response) {
+    // Validar que el usuario esté autenticado
+    if (!req.user?.id) {
+      console.error('❌ Intento de acceso no autorizado a getMyCompanies');
+      return res.status(401).json({ 
+        success: false,
+        message: 'No autorizado',
+        error: 'USER_NOT_AUTHENTICATED'
+      });
+    }
+
+    const userId = req.user.id;
+
     try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ message: 'No autenticado' });
+      console.log(`🔍 Buscando empresas para el usuario: ${userId}`);
+      
+      // Verificar que el userId tenga un formato válido
+      if (typeof userId !== 'string' || userId.trim() === '') {
+        throw new Error('ID de usuario no válido');
       }
 
+      // Obtener las empresas del usuario
       const userCompanies = await storage.db
         .select()
         .from(companies)
         .where(eq(companies.userId, userId))
         .orderBy(companies.createdAt);
 
-      return res.json(userCompanies);
+      console.log(`✅ Se encontraron ${userCompanies.length} empresas para el usuario ${userId}`);
+      
+      return res.status(200).json({
+        success: true,
+        data: userCompanies,
+        count: userCompanies.length
+      });
+
     } catch (error) {
-      console.error('Error al obtener empresas del usuario:', error);
-      return res.status(500).json({ message: 'Error al obtener empresas' });
+      console.error('❌ Error en getMyCompanies:', {
+        error: error instanceof Error ? error.message : 'Error desconocido',
+        stack: error instanceof Error ? error.stack : undefined,
+        userId,
+        timestamp: new Date().toISOString()
+      });
+
+      // Manejar diferentes tipos de errores
+      if (error instanceof Error) {
+        if (error.message.includes('relation "companies" does not exist')) {
+          return res.status(500).json({
+            success: false,
+            message: 'Error en la base de datos: tabla no encontrada',
+            error: 'DATABASE_TABLE_NOT_FOUND'
+          });
+        }
+        
+        if (error.message.includes('connection')) {
+          return res.status(503).json({
+            success: false,
+            message: 'Error de conexión con la base de datos',
+            error: 'DATABASE_CONNECTION_ERROR'
+          });
+        }
+      }
+
+      // Error genérico
+      return res.status(500).json({
+        success: false,
+        message: 'Error al obtener las empresas',
+        error: 'INTERNAL_SERVER_ERROR'
+      });
     }
   },
 
