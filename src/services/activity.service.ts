@@ -302,13 +302,17 @@ export class ActivityService {
    */
   async getProfileViewsCount(profileId: string, days: number = 30) {
     try {
+      // Calcular fecha de inicio en JavaScript
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
       const result = await db
         .select({ count: count() })
         .from(profileViews)
         .where(
           and(
             eq(profileViews.profileId, profileId),
-            sql`${profileViews.createdAt} >= NOW() - INTERVAL '${days} days'`
+            gte(profileViews.createdAt, startDate)
           )
         );
 
@@ -408,23 +412,34 @@ export class ActivityService {
       const userAchs = await db
         .select({
           id: userAchievements.id,
-          unlockedAt: userAchievements.unlocked_at,
-          achievement: {
-            id: achievements.id,
-            code: achievements.code,
-            name: achievements.name,
-            description: achievements.description,
-            icon: achievements.icon,
-            category: achievements.category,
-            points: achievements.points,
-          },
+          unlockedAt: userAchievements.unlockedAt,
+          achievementId: achievements.id,
+          achievementCode: achievements.code,
+          achievementName: achievements.name,
+          achievementDescription: achievements.description,
+          achievementIcon: achievements.icon,
+          achievementCategory: achievements.category,
+          achievementPoints: achievements.points,
         })
         .from(userAchievements)
         .innerJoin(achievements, eq(userAchievements.achievementId, achievements.id))
         .where(eq(userAchievements.userId, userId))
         .orderBy(desc(userAchievements.unlockedAt));
 
-      return userAchs;
+      // Formatear la respuesta para que tenga la estructura esperada
+      return userAchs.map(ua => ({
+        id: ua.id,
+        unlockedAt: ua.unlockedAt,
+        achievement: {
+          id: ua.achievementId,
+          code: ua.achievementCode,
+          name: ua.achievementName,
+          description: ua.achievementDescription,
+          icon: ua.achievementIcon,
+          category: ua.achievementCategory,
+          points: ua.achievementPoints,
+        },
+      }));
     } catch (error) {
       console.error('Error getting user achievements:', error);
       throw error;

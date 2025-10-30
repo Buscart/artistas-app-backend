@@ -57,7 +57,7 @@ export class RecommendationsService {
               userType: users.userType,
               city: users.city,
               isVerified: users.isVerified,
-              followersCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE following_id = ${users.id})`,
+              followersCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE following_id = users.id)`,
               mutualFollowers: sql<number>`0`, // Se calculará después
               score: sql<number>`3`, // Score base para misma ciudad
             })
@@ -84,7 +84,7 @@ export class RecommendationsService {
                 userType: users.userType,
                 city: users.city,
                 isVerified: users.isVerified,
-                followersCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE following_id = ${users.id})`,
+                followersCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE following_id = users.id)`,
                 mutualFollowers: sql<number>`0`,
                 score: sql<number>`4`, // Score más alto para misma categoría
               })
@@ -110,13 +110,13 @@ export class RecommendationsService {
           userType: users.userType,
           city: users.city,
           isVerified: users.isVerified,
-          followersCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE following_id = ${users.id})`,
+          followersCount: sql<number>`(SELECT COUNT(*) FROM follows WHERE following_id = users.id)`,
           mutualFollowers: sql<number>`0`,
-          score: sql<number>`CASE WHEN ${users.isVerified} THEN 2 ELSE 1 END`,
+          score: sql<number>`CASE WHEN users.is_verified THEN 2 ELSE 1 END`,
         })
         .from(users)
         .where(not(inArray(users.id, excludeIds)))
-        .orderBy(sql`(SELECT COUNT(*) FROM follows WHERE following_id = ${users.id}) DESC`)
+        .orderBy(sql`(SELECT COUNT(*) FROM follows WHERE following_id = users.id) DESC`)
         .limit(5);
 
       // ESTRATEGIA 4: Calcular amigos en común para los usuarios recopilados
@@ -192,20 +192,20 @@ export class RecommendationsService {
           recentFollowers: sql<number>`(
             SELECT COUNT(*)
             FROM follows
-            WHERE following_id = ${users.id}
+            WHERE following_id = users.id
             AND created_at > NOW() - INTERVAL '7 days'
           )`,
           totalFollowers: sql<number>`(
             SELECT COUNT(*)
             FROM follows
-            WHERE following_id = ${users.id}
+            WHERE following_id = users.id
           )`,
         })
         .from(users)
         .orderBy(sql`(
           SELECT COUNT(*)
           FROM follows
-          WHERE following_id = ${users.id}
+          WHERE following_id = users.id
           AND created_at > NOW() - INTERVAL '7 days'
         ) DESC`)
         .limit(limit);

@@ -335,6 +335,26 @@ export const getPublicProfile = async (req: Request, res: Response) => {
           responseTime: '< 24h', // TODO: calcular tiempo de respuesta real
         };
       }
+    } else {
+      // Para usuarios tipo 'client', 'company', o 'general' (contratantes)
+      // Agregar estadísticas básicas
+      profileData.stats = {
+        totalProjects: 0, // TODO: implementar contador de proyectos publicados
+        totalReviews: Number(profile.totalReviews) || 0,
+        averageRating: Number(profile.rating) || 0,
+        responseTime: '< 24h',
+      };
+
+      // Agregar datos adicionales para empresas si existen
+      if (profile.userType === 'company') {
+        // TODO: Implementar datos de empresa cuando exista la tabla
+        profileData.companyData = {
+          companyName: profile.displayName || `${profile.firstName} ${profile.lastName}`,
+          industry: null, // TODO: agregar campo industry
+          size: null, // TODO: agregar campo company size
+          website: null, // TODO: agregar campo website
+        };
+      }
     }
 
     res.json(profileData);
