@@ -8,8 +8,7 @@ import {
   getById as getArtistById 
 } from '../controllers/artist.controller.js';
 
-// Importar controladores de eventos
-import EventController, { getUpcomingEvents } from '../controllers/event.controller.js';
+// Los controladores de eventos ahora se importan desde el módulo events/
 
 // Importar controladores del blog
 import { getRecentPosts as getBlogRecentPosts } from '../controllers/blog.controller.js';
@@ -50,6 +49,18 @@ import analyticsRoutes from './analytics.routes.js';
 // Importar rutas de estadísticas
 import statsRoutes from './stats.routes.js';
 
+// Importar rutas de recomendaciones
+import recommendationsRoutes from './recommendations.routes.js';
+
+// Importar rutas de cotizaciones
+import quotationsRoutes from './quotations.routes.js';
+
+// Importar rutas de eventos
+import eventsRoutes from './events.routes.js';
+
+// Importar rutas de órdenes
+import orderRoutes from './orders.routes.js';
+
 // Importar rutas
 import authRoutes from './auth.routes.js';
 import profileRoutes from './profile.routes.js';
@@ -84,7 +95,6 @@ const v1 = Router();
 router.get('/v1/artists/featured', getFeaturedArtists);
 router.get('/v1/artists', getAllArtists);
 router.get('/v1/artists/:id', getArtistById);
-router.get('/v1/events', getUpcomingEvents);
 router.get('/v1/blog', getBlogRecentPosts);
 // Listado de categorías
 router.get('/v1/categories', async (_req: Request, res: Response) => {
@@ -147,6 +157,21 @@ v1.use('/activity', activityRoutes);
 // Rutas de analytics
 v1.use('/analytics', analyticsRoutes);
 
+// Rutas de recomendaciones
+v1.use('/recommendations', recommendationsRoutes);
+
+// Rutas de cotizaciones
+v1.use('/quotations', quotationsRoutes);
+
+// Rutas de hiring (ofertas públicas de trabajo)
+v1.use('/hiring', hiringRoutes);
+
+// Rutas de eventos
+v1.use('/events', eventsRoutes);
+
+// Rutas de órdenes (protegidas)
+v1.use('', authMiddleware, orderRoutes);
+
 // Rutas de estadísticas
 v1.use(statsRoutes);
 
@@ -159,11 +184,8 @@ v1.use('/documents', documentsRoutes);
 // Rutas de fotos destacadas (highlight photos)
 v1.use('/highlight-photos', highlightPhotosRoutes);
 
-// Rutas de eventos
-v1.post('/events', EventController.createEvent as RouteHandler);
-v1.put('/events/:id', EventController.updateEvent as RouteHandler);
-v1.post('/events/:id/cancel', EventController.cancelEvent as RouteHandler);
-v1.get('/events/search', EventController.searchEvents as RouteHandler);
+// Nota: Las rutas de eventos están definidas en events.routes.ts
+// Las rutas duplicadas fueron removidas para evitar conflictos
 
 // Rutas de perfil protegidas
 protectedRoutes.get('/profile', userController.getProfile as RouteHandler);

@@ -839,3 +839,158 @@ export const userDocuments = pgTable('user_documents', {
   createdAt: timestamp('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+// ============================================================================
+// Enhanced Events System - New Tables
+// ============================================================================
+
+// Tabla de tipos de boletos/entradas
+export const ticketTypes = pgTable('ticket_types', {
+  id: serial('id').primaryKey(),
+  eventId: integer('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+
+  // Información básica
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+
+  // Precio
+  price: numeric('price', { precision: 10, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 3 }).default('COP'),
+
+  // Disponibilidad
+  quantity: integer('quantity').notNull(),
+  soldCount: integer('sold_count').default(0),
+
+  // Período de venta
+  saleStart: timestamp('sale_start'),
+  saleEnd: timestamp('sale_end'),
+
+  // Límites de compra
+  minPerOrder: integer('min_per_order').default(1),
+  maxPerOrder: integer('max_per_order').default(10),
+
+  // Configuración
+  isActive: boolean('is_active').default(true),
+  requiresApproval: boolean('requires_approval').default(false),
+
+  // Selección de asientos
+  allowSeatSelection: boolean('allow_seat_selection').default(false),
+
+  // Campos personalizados (JSON)
+  customFields: jsonb('custom_fields').default(sql`'[]'`),
+
+  // Timestamps
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Tabla de asientos
+export const seats = pgTable('seats', {
+  id: serial('id').primaryKey(),
+  eventId: integer('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+
+  // Ubicación del asiento
+  section: varchar('section', { length: 50 }).notNull(),
+  row: varchar('row', { length: 10 }).notNull(),
+  number: varchar('number', { length: 10 }).notNull(),
+
+  // Estado del asiento
+  status: varchar('status', {
+    enum: ['available', 'reserved', 'sold', 'blocked']
+  }).default('available'),
+
+  // Tipo de boleto asignado
+  ticketTypeId: integer('ticket_type_id').references(() => ticketTypes.id, { onDelete: 'set null' }),
+
+  // Metadata (posición visual, características)
+  metadata: jsonb('metadata').default(sql`'{}'`),
+
+  // Información de reserva/venta
+  reservedBy: varchar('reserved_by').references(() => users.id, { onDelete: 'set null' }),
+  reservedAt: timestamp('reserved_at'),
+  reservationExpiry: timestamp('reservation_expiry'),
+
+  // Timestamps
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Tabla de compras/órdenes
+export const purchases = pgTable('purchases', {
+  id: serial('id').primaryKey(),
+  eventId: integer('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+
+  // Totales
+  subtotal: numeric('subtotal', { precision: 10, scale: 2 }).notNull(),
+  fees: numeric('fees', { precision: 10, scale: 2 }).default(sql`0`),
+  taxes: numeric('taxes', { precision: 10, scale: 2 }).default(sql`0`),
+  total: numeric('total', { precision: 10, scale: 2 }).notNull(),
+  currency: varchar('currency', { length: 3 }).default('COP'),
+
+  // Estado del pago
+  paymentStatus: varchar('payment_status', {
+    enum: ['pending', 'completed', 'failed', 'refunded']
+  }).default('pending'),
+  paymentMethod: varchar('payment_method', { length: 50 }),
+  paymentId: varchar('payment_id', { length: 255 }), // ID de Stripe, PayPal, etc.
+
+  // Información de contacto
+  email: varchar('email').notNull(),
+  firstName: varchar('first_name').notNull(),
+  lastName: varchar('last_name').notNull(),
+  phone: varchar('phone'),
+
+  // Timestamps
+  purchasedAt: timestamp('purchased_at').default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Tabla de items de compra (líneas de la orden)
+export const purchaseItems = pgTable('purchase_items', {
+  id: serial('id').primaryKey(),
+  purchaseId: integer('purchase_id').notNull().references(() => purchases.id, { onDelete: 'cascade' }),
+  ticketTypeId: integer('ticket_type_id').notNull().references(() => ticketTypes.id, { onDelete: 'cascade' }),
+  seatId: integer('seat_id').references(() => seats.id, { onDelete: 'set null' }),
+
+  // Cantidad y precio
+  quantity: integer('quantity').notNull().default(1),
+  price: numeric('price', { precision: 10, scale: 2 }).notNull(), // Precio unitario al momento de la compra
+  subtotal: numeric('subtotal', { precision: 10, scale: 2 }).notNull(),
+
+  // Timestamps
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Tabla de asistentes (attendees) - une usuario, evento y boleto
+export const eventAttendees = pgTable('event_attendees', {
+  id: serial('id').primaryKey(),
+  eventId: integer('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+
+  // Información del boleto
+  purchaseId: integer('purchase_id').notNull().references(() => purchases.id, { onDelete: 'cascade' }),
+  ticketTypeId: integer('ticket_type_id').notNull().references(() => ticketTypes.id, { onDelete: 'cascade' }),
+  seatId: integer('seat_id').references(() => seats.id, { onDelete: 'set null' }),
+
+  // Estado del asistente
+  status: varchar('status', {
+    enum: ['registered', 'checked_in', 'no_show', 'cancelled']
+  }).default('registered'),
+
+  // Respuestas a campos personalizados
+  customFieldResponses: jsonb('custom_field_responses').default(sql`'{}'`),
+
+  // Check-in
+  checkedInAt: timestamp('checked_in_at'),
+  checkedInBy: varchar('checked_in_by').references(() => users.id, { onDelete: 'set null' }),
+
+  // Timestamps
+  registeredAt: timestamp('registered_at').default(sql`CURRENT_TIMESTAMP`),
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  // Índice único para prevenir registros duplicados
+  eventUserIdx: uniqueIndex('event_user_purchase_idx').on(table.eventId, table.userId, table.purchaseId),
+}));

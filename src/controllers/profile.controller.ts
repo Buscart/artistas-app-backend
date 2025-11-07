@@ -21,12 +21,19 @@ export const getProfiles = async (req: Request, res: Response) => {
     if (city) conditions.push(eq(users.city, city as string));
     if (minRating) conditions.push(sql`${users.rating} >= ${Number(minRating)}`);
     if (category) {
-      conditions.push(
-        or(
-          eq(artists.categoryId, Number(category)),
-          sql`${artists.subcategories} @> ARRAY[${category}]::text[]`
-        )
-      );
+      const categoryConditions = [];
+      
+      if (artists.categoryId) {
+        categoryConditions.push(eq(artists.categoryId, Number(category)));
+      }
+      
+      if (artists.subcategories) {
+        categoryConditions.push(sql`${artists.subcategories} @> ARRAY[${category}]::text[]`);
+      }
+      
+      if (categoryConditions.length > 0) {
+        conditions.push(or(...categoryConditions));
+      }
     }
 
     // Construir consulta final
@@ -163,61 +170,34 @@ export const getProfileReviews = async (req: Request, res: Response) => {
       .select({
         id: reviews.id,
         userId: reviews.userId,
-        userName: sql<string>`${users.firstName} || ' ' || COALESCE(${users.lastName}, '')`,
-        userImage: users.profileImageUrl,
+
         score: reviews.score,
         comment: reviews.reason,
         type: reviews.type,
         createdAt: reviews.createdAt
       })
       .from(reviews)
-      .leftJoin(users, eq(reviews.userId, users.id))
-      .where(
-        or(
-          and(
-            eq(reviews.type, 'artist'),
-            sql`${reviews.artistId}::integer = ${parseInt(id) || 0}`
-          ),
-          and(
-            eq(reviews.type, 'venue'), 
-            sql`${reviews.venueId}::integer = ${parseInt(id) || 0}`
-          )
-        )
-      )
-      .orderBy(desc(reviews.createdAt))
-      .limit(limitNum)
-      .offset(offsetNum);
-    
+      // .where(
+      //   or(
+      //     sql`reviews.artist_id IN (SELECT id FROM artists WHERE user_id = ${id})`,
+      //     sql`reviews.venue_id IN (SELECT id FROM venues WHERE company_id IN (SELECT id FROM companies WHERE user_id = ${id}))`
+      //   )
+      // );
+
     // Obtener estadísticas de calificaciones
     const [ratingStats] = await db
       .select({
         average: sql<number>`COALESCE(AVG(score), 0) as average`,
         count: sql<number>`COUNT(*) as count`,
-        distribution: sql<Array<{rating: number, count: number}>>`
-          COALESCE(
-            array_agg(
-              json_build_object(
-                'rating', FLOOR(score),
-                'count', COUNT(*)
-              )
-            ) FILTER (WHERE score IS NOT NULL),
-            '{}'::json[]
-          ) as distribution
-        `
+
       })
       .from(reviews)
-      .where(
-        or(
-          and(
-            eq(reviews.type, 'artist'),
-            sql`${reviews.artistId}::integer = ${parseInt(id) || 0}`
-          ),
-          and(
-            eq(reviews.type, 'venue'), 
-            sql`${reviews.venueId}::integer = ${parseInt(id) || 0}`
-          )
-        )
-      );
+      // .where(
+      //   or(
+      //     sql`reviews.artist_id IN (SELECT id FROM artists WHERE user_id = ${id})`,
+      //     sql`reviews.venue_id IN (SELECT id FROM venues WHERE company_id IN (SELECT id FROM companies WHERE user_id = ${id}))`
+      //   )
+      // );
     
     res.json({
       reviews: profileReviews,

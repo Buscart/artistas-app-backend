@@ -126,6 +126,7 @@ export class EventStorage {
       status: 'published' as const,
       // Handle optional fields with proper typing
       ...('imageUrl' in data && { featuredImage: (data as any).imageUrl }),
+      ...('images' in data && { gallery: (data as any).images }),
       ...('isPublic' in data && { isPublic: (data as any).isPublic }),
       ...(data.capacity !== undefined && { availableTickets: data.capacity })
     };
@@ -160,6 +161,12 @@ export class EventStorage {
     if ('imageUrl' in updateData) {
       updateData.featuredImage = (updateData as any).imageUrl || null;
       delete (updateData as any).imageUrl;
+    }
+
+    // Handle images array if provided
+    if ('images' in updateData) {
+      updateData.gallery = (updateData as any).images || [];
+      delete (updateData as any).images;
     }
 
     // Ensure we don't try to update the ID or timestamps

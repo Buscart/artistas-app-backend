@@ -17,6 +17,8 @@
     "db:migrate": "drizzle-kit push:pg",
     "db:studio": "drizzle-kit studio",
     "db:add-indices": "tsx scripts/add-indices.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "db:seed:artists": "tsx scripts/seed-artists.ts",
     "migrate:custom": "NODE_OPTIONS='--loader ts-node/esm' scripts/migrate.ts",
     "migrate:explorer": "tsx src/scripts/run-explorer-migration-pg.ts"
   },

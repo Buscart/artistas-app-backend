@@ -3,7 +3,7 @@ import { storage } from '../storage/index.js';
 import { eq } from 'drizzle-orm';
 import { users, artists, categories, disciplines, roles, specializations } from '../schema.js';
 import crypto from 'crypto';
-import { sendEmail } from '../services/email.service.js'; // Servicio de email
+import { EmailService } from '../services/email.service.js'; // Servicio de email
 
 // Helper functions para convertir códigos a IDs
 async function getCategoryIdByCode(code: string): Promise<number | null> {
@@ -368,14 +368,14 @@ export const onboardingController = {
       const verificationUrl = `${process.env.FRONTEND_URL}/verify-email?token=${verificationToken}`;
       
       try {
-        await sendEmail({
+        await EmailService.sendTicketEmail({
           to: userData.email,
-          subject: 'Verifica tu correo electrónico - BuscartPro',
+          subject: 'Verifica tu correo electrónico',
+          text: `Por favor verifica tu correo electrónico haciendo clic en el siguiente enlace: ${verificationUrl}`,
           html: `
-            <h1>Bienvenido a BuscartPro</h1>
-            <p>Hola ${userData.firstName || 'Usuario'},</p>
-            <p>Por favor verifica tu correo electrónico haciendo clic en el siguiente enlace:</p>
-            <a href="${verificationUrl}">Verificar Email</a>
+            <h1>Verifica tu correo electrónico</h1>
+            <p>Por favor haz clic en el siguiente enlace para verificar tu correo electrónico:</p>
+            <a href="${verificationUrl}">${verificationUrl}</a>
             <p>Este enlace expirará en 24 horas.</p>
             <p>Si no creaste esta cuenta, puedes ignorar este mensaje.</p>
           `,
