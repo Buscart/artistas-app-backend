@@ -80,6 +80,7 @@ import servicesRoutes from './services.routes.js';
 import storeRoutes from './store.routes.js';
 import campaignsRoutes from './campaigns.routes.js';
 import bookingsRoutes from './bookings.routes.js';
+import venuesRoutes from './venues.routes.js';
 import { storage } from '../storage/index.js';
 
 // Crear el enrutador
@@ -206,6 +207,9 @@ v1.use('/campaigns', campaignsRoutes);
 
 // Rutas de reservas/bookings (protegidas)
 v1.use('/bookings', bookingsRoutes);
+
+// Rutas de venues/espacios (protegidas)
+v1.use('/venues', authMiddleware, venuesRoutes);
 
 // Nota: Las rutas de eventos están definidas en events.routes.ts
 // Las rutas duplicadas fueron removidas para evitar conflictos

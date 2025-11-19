@@ -1,0 +1,311 @@
+import { Response } from 'express';
+import { storage } from '../storage/index.js';
+import { eq, and } from 'drizzle-orm';
+import { venues, companies } from '../schema.js';
+
+export const venuesController = {
+  // Obtener todos los venues de una company
+  async getVenuesByCompany(req: any, res: Response) {
+    try {
+      const { companyId } = req.params;
+      const userId = req.user?.id;
+
+      console.log(`🔍 Buscando venues para la company: ${companyId}`);
+
+      // Verificar que la company existe y pertenece al usuario
+      const company = await storage.db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, parseInt(companyId)))
+        .limit(1);
+
+      if (!company || company.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Empresa no encontrada'
+        });
+      }
+
+      // Verificar que el usuario es el dueño
+      if (userId && company[0].userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permiso para acceder a estos espacios'
+        });
+      }
+
+      // Obtener los venues de la company
+      const companyVenues = await storage.db
+        .select()
+        .from(venues)
+        .where(eq(venues.companyId, parseInt(companyId)))
+        .orderBy(venues.createdAt);
+
+      console.log(`✅ Se encontraron ${companyVenues.length} espacios para la company ${companyId}`);
+
+      return res.status(200).json({
+        success: true,
+        data: companyVenues,
+        count: companyVenues.length
+      });
+
+    } catch (error) {
+      console.error('❌ Error en getVenuesByCompany:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al obtener los espacios',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  },
+
+  // Obtener un venue específico
+  async getVenueById(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+
+      const venue = await storage.db
+        .select()
+        .from(venues)
+        .where(eq(venues.id, parseInt(id)))
+        .limit(1);
+
+      if (!venue || venue.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Espacio no encontrado'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: venue[0]
+      });
+
+    } catch (error) {
+      console.error('❌ Error en getVenueById:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al obtener el espacio',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  },
+
+  // Crear un nuevo venue
+  async createVenue(req: any, res: Response) {
+    try {
+      const userId = req.user?.id;
+      const { companyId } = req.params;
+      const venueData = req.body;
+
+      console.log(`📝 Creando venue para la company: ${companyId}`);
+
+      // Verificar que la company existe y pertenece al usuario
+      const company = await storage.db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, parseInt(companyId)))
+        .limit(1);
+
+      if (!company || company.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Empresa no encontrada'
+        });
+      }
+
+      if (company[0].userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permiso para agregar espacios a esta empresa'
+        });
+      }
+
+      // Preparar datos del venue
+      const newVenueData = {
+        companyId: parseInt(companyId),
+        name: venueData.name,
+        description: venueData.description,
+        venueType: venueData.type,
+        capacity: venueData.capacity,
+        dailyRate: venueData.price ? venueData.price.toString() : null,
+        address: company[0].address, // Heredar de la company
+        city: company[0].city,
+        services: venueData.amenities || [],
+        openingHours: {
+          hours: venueData.openingHours,
+          priceType: venueData.priceType,
+          tags: venueData.tags || []
+        },
+        isAvailable: venueData.status === 'available' || venueData.status === 'open',
+        multimedia: {
+          images: venueData.images || [],
+          tags: venueData.tags || []
+        },
+        contact: company[0].socialMedia || {},
+        coordinates: company[0].coordinates || null
+      };
+
+      const [newVenue] = await storage.db
+        .insert(venues)
+        .values(newVenueData)
+        .returning();
+
+      console.log(`✅ Venue creado exitosamente con ID: ${newVenue.id}`);
+
+      return res.status(201).json({
+        success: true,
+        data: newVenue,
+        message: 'Espacio creado exitosamente'
+      });
+
+    } catch (error) {
+      console.error('❌ Error en createVenue:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al crear el espacio',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  },
+
+  // Actualizar un venue
+  async updateVenue(req: any, res: Response) {
+    try {
+      const userId = req.user?.id;
+      const { id, companyId } = req.params;
+      const venueData = req.body;
+
+      console.log(`📝 Actualizando venue: ${id}`);
+
+      // Verificar que el venue existe
+      const existingVenue = await storage.db
+        .select()
+        .from(venues)
+        .where(eq(venues.id, parseInt(id)))
+        .limit(1);
+
+      if (!existingVenue || existingVenue.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Espacio no encontrado'
+        });
+      }
+
+      // Verificar que la company pertenece al usuario
+      const company = await storage.db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, parseInt(companyId)))
+        .limit(1);
+
+      if (!company || company.length === 0 || company[0].userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permiso para editar este espacio'
+        });
+      }
+
+      // Preparar datos actualizados
+      const updatedVenueData = {
+        name: venueData.name,
+        description: venueData.description,
+        venueType: venueData.type,
+        capacity: venueData.capacity,
+        dailyRate: venueData.price ? venueData.price.toString() : null,
+        services: venueData.amenities || [],
+        openingHours: {
+          hours: venueData.openingHours,
+          priceType: venueData.priceType,
+          tags: venueData.tags || []
+        },
+        isAvailable: venueData.status === 'available' || venueData.status === 'open',
+        multimedia: {
+          images: venueData.images || [],
+          tags: venueData.tags || []
+        },
+        updatedAt: new Date()
+      };
+
+      const [updatedVenue] = await storage.db
+        .update(venues)
+        .set(updatedVenueData)
+        .where(eq(venues.id, parseInt(id)))
+        .returning();
+
+      console.log(`✅ Venue actualizado exitosamente: ${id}`);
+
+      return res.status(200).json({
+        success: true,
+        data: updatedVenue,
+        message: 'Espacio actualizado exitosamente'
+      });
+
+    } catch (error) {
+      console.error('❌ Error en updateVenue:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al actualizar el espacio',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  },
+
+  // Eliminar un venue
+  async deleteVenue(req: any, res: Response) {
+    try {
+      const userId = req.user?.id;
+      const { id, companyId } = req.params;
+
+      console.log(`🗑️ Eliminando venue: ${id}`);
+
+      // Verificar que el venue existe
+      const existingVenue = await storage.db
+        .select()
+        .from(venues)
+        .where(eq(venues.id, parseInt(id)))
+        .limit(1);
+
+      if (!existingVenue || existingVenue.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Espacio no encontrado'
+        });
+      }
+
+      // Verificar que la company pertenece al usuario
+      const company = await storage.db
+        .select()
+        .from(companies)
+        .where(eq(companies.id, parseInt(companyId)))
+        .limit(1);
+
+      if (!company || company.length === 0 || company[0].userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'No tienes permiso para eliminar este espacio'
+        });
+      }
+
+      await storage.db
+        .delete(venues)
+        .where(eq(venues.id, parseInt(id)));
+
+      console.log(`✅ Venue eliminado exitosamente: ${id}`);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Espacio eliminado exitosamente'
+      });
+
+    } catch (error) {
+      console.error('❌ Error en deleteVenue:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al eliminar el espacio',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  }
+};
