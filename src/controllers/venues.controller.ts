@@ -4,6 +4,103 @@ import { eq, and } from 'drizzle-orm';
 import { venues, companies } from '../schema.js';
 
 export const venuesController = {
+  // Obtener todos los venues (público - para explorador)
+  async getAllVenues(req: any, res: Response) {
+    try {
+      console.log('🔍 Obteniendo todos los venues disponibles');
+
+      // Obtener parámetros de filtro
+      const { city, venue_type, min_capacity, max_capacity, min_price, max_price, available, limit, offset } = req.query;
+
+      let query = storage.db.select().from(venues);
+
+      // Aplicar filtros si existen
+      const conditions = [];
+
+      if (city) {
+        conditions.push(eq(venues.city, city as string));
+      }
+
+      if (venue_type) {
+        conditions.push(eq(venues.venueType, venue_type as string));
+      }
+
+      if (available !== undefined) {
+        conditions.push(eq(venues.isAvailable, available === 'true'));
+      }
+
+      if (conditions.length > 0) {
+        query = query.where(and(...conditions));
+      }
+
+      let allVenues = await query.orderBy(venues.createdAt);
+
+      // Filtros adicionales que requieren código (min/max)
+      if (min_capacity) {
+        const minCap = parseInt(min_capacity as string);
+        allVenues = allVenues.filter(v => v.capacity && v.capacity >= minCap);
+      }
+
+      if (max_capacity) {
+        const maxCap = parseInt(max_capacity as string);
+        allVenues = allVenues.filter(v => v.capacity && v.capacity <= maxCap);
+      }
+
+      if (min_price) {
+        const minPr = parseFloat(min_price as string);
+        allVenues = allVenues.filter(v => v.dailyRate && parseFloat(v.dailyRate) >= minPr);
+      }
+
+      if (max_price) {
+        const maxPr = parseFloat(max_price as string);
+        allVenues = allVenues.filter(v => v.dailyRate && parseFloat(v.dailyRate) <= maxPr);
+      }
+
+      // Aplicar paginación
+      const start = offset ? parseInt(offset as string) : 0;
+      const end = limit ? start + parseInt(limit as string) : allVenues.length;
+      const paginatedVenues = allVenues.slice(start, end);
+
+      // Transformar datos para coincidir con el formato del frontend
+      const transformedVenues = paginatedVenues.map(venue => ({
+        id: venue.id,
+        name: venue.name,
+        description: venue.description || '',
+        venue_type: venue.venueType || '',
+        address: venue.address || '',
+        city: venue.city || '',
+        state: '', // No tenemos estado en DB
+        country: 'Colombia',
+        capacity: venue.capacity || 0,
+        amenities: venue.services || [],
+        price_per_hour: venue.dailyRate || '0',
+        available: venue.isAvailable || false,
+        images: (venue.multimedia as any)?.images || [],
+        rating: venue.rating ? parseFloat(venue.rating.toString()) : 0,
+        total_reviews: venue.totalReviews || 0,
+        created_at: venue.createdAt?.toISOString() || new Date().toISOString(),
+        updated_at: venue.updatedAt?.toISOString() || new Date().toISOString()
+      }));
+
+      console.log(`✅ Se encontraron ${allVenues.length} venues (mostrando ${paginatedVenues.length})`);
+
+      return res.status(200).json({
+        success: true,
+        data: transformedVenues,
+        total: allVenues.length,
+        count: paginatedVenues.length
+      });
+
+    } catch (error) {
+      console.error('❌ Error en getAllVenues:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Error al obtener los espacios',
+        error: error instanceof Error ? error.message : 'Error desconocido'
+      });
+    }
+  },
+
   // Obtener todos los venues de una company
   async getVenuesByCompany(req: any, res: Response) {
     try {

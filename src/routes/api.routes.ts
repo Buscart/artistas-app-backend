@@ -61,6 +61,9 @@ import eventsRoutes from './events.routes.js';
 // Importar rutas de órdenes
 import orderRoutes from './orders.routes.js';
 
+// Importar rutas de carrito de compras
+import cartRoutes from './cart.routes.js';
+
 // Importar rutas
 import authRoutes from './auth.routes.js';
 import profileRoutes from './profile.routes.js';
@@ -81,6 +84,7 @@ import storeRoutes from './store.routes.js';
 import campaignsRoutes from './campaigns.routes.js';
 import bookingsRoutes from './bookings.routes.js';
 import venuesRoutes from './venues.routes.js';
+import { venuesController } from '../controllers/venues.controller.js';
 import { storage } from '../storage/index.js';
 
 // Crear el enrutador
@@ -101,6 +105,9 @@ const v1 = Router();
 router.get('/v1/artists/featured', getFeaturedArtists);
 router.get('/v1/artists', getAllArtists);
 router.get('/v1/artists/:id', getArtistById);
+
+// Ruta pública de venues (explorador) - DEBE estar en router, no en v1
+router.get('/v1/venues', venuesController.getAllVenues);
 router.get('/v1/blog', getBlogRecentPosts);
 // Listado de categorías
 router.get('/v1/categories', async (_req: Request, res: Response) => {
@@ -180,6 +187,9 @@ v1.use('/events', eventsRoutes);
 
 // Rutas de órdenes (protegidas)
 v1.use('', authMiddleware, orderRoutes);
+
+// Rutas de carrito de compras (protegidas)
+v1.use('', cartRoutes);
 
 // Rutas de estadísticas
 v1.use(statsRoutes);

@@ -1,0 +1,652 @@
+import { Request, Response } from 'express';
+import { z } from 'zod';
+import { storage } from '../storage/index.js';
+
+const pool = storage.pool;
+
+// ============================================
+// Schemas de validación con Zod
+// ============================================
+
+const addItemSchema = z.object({
+  itemType: z.enum(['service', 'product', 'event', 'booking'], {
+    errorMap: () => ({ message: 'Tipo de item inválido' }),
+  }),
+  itemId: z.number().int().positive('ID de item debe ser positivo'),
+  quantity: z.number().int().positive('La cantidad debe ser al menos 1').default(1),
+  price: z.number().nonnegative('El precio no puede ser negativo'),
+  metadata: z.record(z.any()).optional().default({}),
+});
+
+const updateQuantitySchema = z.object({
+  quantity: z.number().int().positive('La cantidad debe ser al menos 1'),
+});
+
+const checkoutSchema = z.object({
+  email: z.string().email('Email inválido'),
+  phone: z.string().min(10, 'Teléfono inválido').optional(),
+  notes: z.string().optional(),
+  paymentMethod: z.enum(['mercado_pago', 'credit_card', 'pse', 'cash', 'other']).default('mercado_pago'),
+  promoCode: z.string().optional(),
+});
+
+// ============================================
+// Tipos TypeScript
+// ============================================
+
+interface AuthRequest extends Request {
+  user?: {
+    id: string;
+    email?: string;
+  };
+}
+
+interface CartItem {
+  id: number;
+  cart_id: number;
+  item_type: 'service' | 'product' | 'event' | 'booking';
+  item_id: number;
+  quantity: number;
+  price: string;
+  metadata: Record<string, any>;
+  created_at: Date;
+  updated_at: Date;
+}
+
+interface Cart {
+  id: number;
+  user_id: string;
+  status: string;
+  items: CartItem[];
+  total: number;
+  itemsCount: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ============================================
+// Helper Functions
+// ============================================
+
+/**
+ * Obtiene o crea un carrito activo para el usuario
+ */
+async function getOrCreateCart(userId: string): Promise<number> {
+  const client = await pool.connect();
+  try {
+    // Buscar carrito activo existente
+    const existingCart = await client.query(
+      `SELECT id FROM carts WHERE user_id = $1 AND status = 'active' LIMIT 1`,
+      [userId]
+    );
+
+    if (existingCart.rows.length > 0) {
+      return existingCart.rows[0].id;
+    }
+
+    // Crear nuevo carrito
+    const newCart = await client.query(
+      `INSERT INTO carts (user_id, status) VALUES ($1, 'active') RETURNING id`,
+      [userId]
+    );
+
+    return newCart.rows[0].id;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Obtiene el carrito completo con sus items
+ */
+async function getCartWithItems(cartId: number): Promise<Cart | null> {
+  const client = await pool.connect();
+  try {
+    // Obtener carrito
+    const cartResult = await client.query(
+      `SELECT * FROM carts WHERE id = $1 AND status = 'active'`,
+      [cartId]
+    );
+
+    if (cartResult.rows.length === 0) {
+      return null;
+    }
+
+    const cart = cartResult.rows[0];
+
+    // Obtener items del carrito
+    const itemsResult = await client.query(
+      `SELECT * FROM cart_items WHERE cart_id = $1 ORDER BY created_at ASC`,
+      [cartId]
+    );
+
+    const items = itemsResult.rows;
+
+    // Calcular total
+    const total = items.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
+    const itemsCount = items.reduce((sum, item) => sum + item.quantity, 0);
+
+    return {
+      ...cart,
+      items,
+      total,
+      itemsCount,
+    };
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Valida que el item existe y está disponible
+ * TODO: Implementar validaciones específicas por tipo de item
+ */
+async function validateItem(itemType: string, itemId: number): Promise<{ valid: boolean; error?: string }> {
+  // Por ahora aceptamos todos los items
+  // En producción, deberías validar contra las tablas correspondientes:
+  // - services: Verificar que el servicio existe y está activo
+  // - products: Verificar stock disponible
+  // - events: Verificar disponibilidad de tickets
+  // - bookings: Verificar disponibilidad de fechas
+
+  return { valid: true };
+}
+
+// ============================================
+// Controller Functions
+// ============================================
+
+/**
+ * GET /api/v1/cart
+ * Obtiene el carrito actual del usuario
+ */
+export async function getCart(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+      });
+    }
+
+    const cartId = await getOrCreateCart(userId);
+    const cart = await getCartWithItems(cartId);
+
+    if (!cart) {
+      return res.status(404).json({
+        success: false,
+        error: 'Carrito no encontrado',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        id: cart.id,
+        items: cart.items,
+        total: cart.total,
+        itemsCount: cart.itemsCount,
+        createdAt: cart.created_at,
+        updatedAt: cart.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error('Error getting cart:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al obtener el carrito',
+    });
+  }
+}
+
+/**
+ * POST /api/v1/cart/items
+ * Agrega un item al carrito
+ */
+export async function addItemToCart(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+      });
+    }
+
+    // Validar datos de entrada
+    const validation = addItemSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Datos inválidos',
+        details: validation.error.issues,
+      });
+    }
+
+    const { itemType, itemId, quantity, price, metadata } = validation.data;
+
+    // Validar que el item existe
+    const itemValidation = await validateItem(itemType, itemId);
+    if (!itemValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: itemValidation.error || 'Item no válido',
+      });
+    }
+
+    const cartId = await getOrCreateCart(userId);
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Verificar si el item ya existe en el carrito
+      const existingItem = await client.query(
+        `SELECT id, quantity FROM cart_items
+         WHERE cart_id = $1 AND item_type = $2 AND item_id = $3 AND metadata = $4`,
+        [cartId, itemType, itemId, JSON.stringify(metadata)]
+      );
+
+      let cartItem;
+
+      if (existingItem.rows.length > 0) {
+        // Actualizar cantidad si ya existe
+        const newQuantity = existingItem.rows[0].quantity + quantity;
+        cartItem = await client.query(
+          `UPDATE cart_items SET quantity = $1, updated_at = NOW()
+           WHERE id = $2 RETURNING *`,
+          [newQuantity, existingItem.rows[0].id]
+        );
+      } else {
+        // Insertar nuevo item
+        cartItem = await client.query(
+          `INSERT INTO cart_items (cart_id, item_type, item_id, quantity, price, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+          [cartId, itemType, itemId, quantity, price, JSON.stringify(metadata)]
+        );
+      }
+
+      // Actualizar timestamp del carrito
+      await client.query(
+        `UPDATE carts SET updated_at = NOW() WHERE id = $1`,
+        [cartId]
+      );
+
+      await client.query('COMMIT');
+
+      // Obtener carrito completo actualizado
+      const updatedCart = await getCartWithItems(cartId);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Item agregado al carrito',
+        data: {
+          item: cartItem.rows[0],
+          cart: updatedCart,
+        },
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error adding item to cart:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al agregar item al carrito',
+    });
+  }
+}
+
+/**
+ * PUT /api/v1/cart/items/:itemId
+ * Actualiza la cantidad de un item
+ */
+export async function updateCartItem(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+      });
+    }
+
+    const { itemId } = req.params;
+    const validation = updateQuantitySchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Datos inválidos',
+        details: validation.error.issues,
+      });
+    }
+
+    const { quantity } = validation.data;
+
+    const client = await pool.connect();
+    try {
+      // Verificar que el item pertenece al carrito del usuario
+      const itemCheck = await client.query(
+        `SELECT ci.*, c.user_id
+         FROM cart_items ci
+         JOIN carts c ON ci.cart_id = c.id
+         WHERE ci.id = $1 AND c.user_id = $2 AND c.status = 'active'`,
+        [itemId, userId]
+      );
+
+      if (itemCheck.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Item no encontrado en el carrito',
+        });
+      }
+
+      // Actualizar cantidad
+      const updatedItem = await client.query(
+        `UPDATE cart_items SET quantity = $1, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [quantity, itemId]
+      );
+
+      // Actualizar timestamp del carrito
+      const cartId = itemCheck.rows[0].cart_id;
+      await client.query(
+        `UPDATE carts SET updated_at = NOW() WHERE id = $1`,
+        [cartId]
+      );
+
+      // Obtener carrito completo actualizado
+      const updatedCart = await getCartWithItems(cartId);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Cantidad actualizada',
+        data: {
+          item: updatedItem.rows[0],
+          cart: updatedCart,
+        },
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error updating cart item:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al actualizar el item',
+    });
+  }
+}
+
+/**
+ * DELETE /api/v1/cart/items/:itemId
+ * Elimina un item del carrito
+ */
+export async function removeCartItem(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+      });
+    }
+
+    const { itemId } = req.params;
+
+    const client = await pool.connect();
+    try {
+      // Verificar que el item pertenece al carrito del usuario
+      const itemCheck = await client.query(
+        `SELECT ci.cart_id, c.user_id
+         FROM cart_items ci
+         JOIN carts c ON ci.cart_id = c.id
+         WHERE ci.id = $1 AND c.user_id = $2 AND c.status = 'active'`,
+        [itemId, userId]
+      );
+
+      if (itemCheck.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          error: 'Item no encontrado en el carrito',
+        });
+      }
+
+      const cartId = itemCheck.rows[0].cart_id;
+
+      // Eliminar item
+      await client.query(
+        `DELETE FROM cart_items WHERE id = $1`,
+        [itemId]
+      );
+
+      // Actualizar timestamp del carrito
+      await client.query(
+        `UPDATE carts SET updated_at = NOW() WHERE id = $1`,
+        [cartId]
+      );
+
+      // Obtener carrito completo actualizado
+      const updatedCart = await getCartWithItems(cartId);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Item eliminado del carrito',
+        data: {
+          cart: updatedCart,
+        },
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error removing cart item:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al eliminar el item',
+    });
+  }
+}
+
+/**
+ * DELETE /api/v1/cart
+ * Vacía el carrito completo
+ */
+export async function clearCart(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+      });
+    }
+
+    const cartId = await getOrCreateCart(userId);
+
+    const client = await pool.connect();
+    try {
+      // Eliminar todos los items
+      await client.query(
+        `DELETE FROM cart_items WHERE cart_id = $1`,
+        [cartId]
+      );
+
+      // Actualizar timestamp del carrito
+      await client.query(
+        `UPDATE carts SET updated_at = NOW() WHERE id = $1`,
+        [cartId]
+      );
+
+      return res.status(200).json({
+        success: true,
+        message: 'Carrito vaciado',
+        data: {
+          cart: {
+            id: cartId,
+            items: [],
+            total: 0,
+            itemsCount: 0,
+          },
+        },
+      });
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error clearing cart:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al vaciar el carrito',
+    });
+  }
+}
+
+/**
+ * POST /api/v1/cart/validate
+ * Valida disponibilidad y precios de los items
+ */
+export async function validateCart(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+      });
+    }
+
+    const cartId = await getOrCreateCart(userId);
+    const cart = await getCartWithItems(cartId);
+
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'El carrito está vacío',
+      });
+    }
+
+    // TODO: Validar cada item contra su tabla correspondiente
+    // Por ahora retornamos que todo es válido
+    const validationResults = cart.items.map(item => ({
+      itemId: item.id,
+      valid: true,
+      available: true,
+      priceChanged: false,
+    }));
+
+    const allValid = validationResults.every(r => r.valid && r.available);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        valid: allValid,
+        items: validationResults,
+        cart,
+      },
+    });
+  } catch (error) {
+    console.error('Error validating cart:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al validar el carrito',
+    });
+  }
+}
+
+/**
+ * POST /api/v1/cart/checkout
+ * Procesa el checkout del carrito
+ */
+export async function checkoutCart(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+      });
+    }
+
+    // Validar datos de checkout
+    const validation = checkoutSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        success: false,
+        error: 'Datos de checkout inválidos',
+        details: validation.error.issues,
+      });
+    }
+
+    const checkoutData = validation.data;
+
+    const cartId = await getOrCreateCart(userId);
+    const cart = await getCartWithItems(cartId);
+
+    if (!cart || cart.items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'El carrito está vacío',
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Crear registro de checkout
+      const checkout = await client.query(
+        `INSERT INTO cart_checkouts (cart_id, user_id, total_amount, items_count, payment_method, checkout_data)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [
+          cartId,
+          userId,
+          cart.total,
+          cart.itemsCount,
+          checkoutData.paymentMethod,
+          JSON.stringify(checkoutData),
+        ]
+      );
+
+      // Marcar carrito como checked_out
+      await client.query(
+        `UPDATE carts SET status = 'checked_out', updated_at = NOW() WHERE id = $1`,
+        [cartId]
+      );
+
+      await client.query('COMMIT');
+
+      // TODO: Aquí se integraría con Mercado Pago para generar el pago
+      // Por ahora retornamos el checkout creado
+
+      return res.status(200).json({
+        success: true,
+        message: 'Checkout iniciado',
+        data: {
+          checkoutId: checkout.rows[0].id,
+          total: cart.total,
+          itemsCount: cart.itemsCount,
+          paymentMethod: checkoutData.paymentMethod,
+          // TODO: Agregar URL de pago de Mercado Pago
+          paymentUrl: null,
+        },
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error processing checkout:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al procesar el checkout',
+    });
+  }
+}
