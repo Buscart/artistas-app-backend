@@ -305,6 +305,13 @@ blogRoutes.post('/', authMiddleware, uploadRateLimit, asyncHandler(async (req, r
     scheduledAt,
   } = req.body;
 
+  console.log('🔍 Backend recibió datos del blog:', {
+    title,
+    featuredImage: featuredImage ? '✅ Tiene imagen' : '❌ Sin imagen',
+    featuredImageURL: featuredImage,
+    gallery: gallery ? `Array con ${gallery.length} items` : 'Sin galería'
+  });
+
   if (!title || !content) {
     throw new AppError(400, 'Título y contenido son requeridos', true, 'MISSING_FIELDS');
   }
@@ -359,6 +366,13 @@ blogRoutes.post('/', authMiddleware, uploadRateLimit, asyncHandler(async (req, r
       publishedAt: visibility === 'public' ? new Date() : null,
     })
     .returning();
+
+  console.log('💾 Post guardado en BD:', {
+    id: newPost.id,
+    title: newPost.title,
+    featuredImage: newPost.featuredImage ? '✅ Guardada' : '❌ NULL',
+    featuredImageURL: newPost.featuredImage
+  });
 
   logger.info(`Usuario ${userId} creó publicación de blog`, { postId: newPost.id }, 'Blog');
 

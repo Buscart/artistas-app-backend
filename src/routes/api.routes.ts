@@ -31,6 +31,9 @@ import { profileController } from '../controllers/profile.controller.js';
 // Importar rutas de posts
 import postRoutes from './posts.routes.js';
 
+// Importar rutas sociales (usuarios sugeridos, tendencias, follows)
+import socialRoutes from './social.routes.js';
+
 // Importar rutas de elementos guardados
 import savedItemsRoutes from './saved-items.routes.js';
 
@@ -84,6 +87,8 @@ import storeRoutes from './store.routes.js';
 import campaignsRoutes from './campaigns.routes.js';
 import bookingsRoutes from './bookings.routes.js';
 import venuesRoutes from './venues.routes.js';
+import favoritesRoutes from './favorites.routes.js';
+import uploadRoutes from './upload.routes.js';
 import { venuesController } from '../controllers/venues.controller.js';
 import { storage } from '../storage/index.js';
 
@@ -135,6 +140,9 @@ v1.delete('/featured/:id', featuredController.deleteFeaturedItem as RouteHandler
 
 // Rutas de posts
 v1.use('/posts', postRoutes);
+
+// Rutas sociales
+v1.use('/', socialRoutes);
 
 // Rutas por páginas (estructura limpia por secciones de la app)
 const pages = Router();
@@ -220,6 +228,12 @@ v1.use('/bookings', bookingsRoutes);
 
 // Rutas de venues/espacios (protegidas)
 v1.use('/venues', authMiddleware, venuesRoutes);
+
+// Rutas de favoritos (protegidas)
+v1.use('/favorites', authMiddleware, favoritesRoutes);
+
+// Rutas de subida de archivos (protegidas)
+v1.use('/upload', uploadRoutes);
 
 // Nota: Las rutas de eventos están definidas en events.routes.ts
 // Las rutas duplicadas fueron removidas para evitar conflictos

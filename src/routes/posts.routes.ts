@@ -105,15 +105,19 @@ router.post(
 // Obtener todos los posts
 router.get('/', async (req, res, next) => {
   try {
-    const { limit = '10', offset = '0', type } = req.query;
-    
+    const { limit = '10', offset = '0', type, followingOnly, category } = req.query;
+    const userId = req.user?.id; // Optional user ID from auth middleware
+
     // Usar el método estático directamente
     const result = await PostService.getAllPosts(
       parseInt(limit as string),
       parseInt(offset as string),
-      type as 'post' | 'nota' | 'blog' | undefined
+      type as 'post' | 'nota' | 'blog' | undefined,
+      userId,
+      followingOnly === 'true',
+      category as string | undefined
     );
-    
+
     res.json(result);
   } catch (error) {
     next(error);
@@ -223,7 +227,7 @@ router.post(
     try {
       const postId = parseInt(req.params.id);
       const userId = req.user?.id;
-      
+
       if (isNaN(postId) || !userId) {
         return res.status(400).json({ message: 'ID de post no válido' });
       }
@@ -239,5 +243,130 @@ router.post(
     }
   }
 );
+
+// Dar like a un post
+router.post('/:id/like', authMiddleware, async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const userId = req.user?.id;
+
+    if (isNaN(postId) || !userId) {
+      return res.status(400).json({ message: 'ID de post no válido' });
+    }
+
+    await PostService.likePost(postId, userId);
+    res.json({ message: 'Like agregado correctamente' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Quitar like de un post
+router.delete('/:id/like', authMiddleware, async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const userId = req.user?.id;
+
+    if (isNaN(postId) || !userId) {
+      return res.status(400).json({ message: 'ID de post no válido' });
+    }
+
+    await PostService.unlikePost(postId, userId);
+    res.json({ message: 'Like eliminado correctamente' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Compartir un post
+router.post('/:id/share', authMiddleware, async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const userId = req.user?.id;
+
+    if (isNaN(postId) || !userId) {
+      return res.status(400).json({ message: 'ID de post no válido' });
+    }
+
+    const { content } = req.body;
+    const sharedPost = await PostService.sharePost(postId, userId, content);
+    res.status(201).json(sharedPost);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Obtener comentarios de un post
+router.get('/:id/comments', async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id);
+
+    if (isNaN(postId)) {
+      return res.status(400).json({ message: 'ID de post no válido' });
+    }
+
+    const comments = await PostService.getComments(postId);
+    res.json({ comments });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Crear comentario en un post
+router.post('/:id/comments', authMiddleware, async (req, res, next) => {
+  try {
+    const postId = parseInt(req.params.id);
+    const userId = req.user?.id;
+
+    if (isNaN(postId) || !userId) {
+      return res.status(400).json({ message: 'ID de post no válido' });
+    }
+
+    const { content, parentId } = req.body;
+
+    if (!content || content.trim().length === 0) {
+      return res.status(400).json({ message: 'El contenido del comentario es requerido' });
+    }
+
+    const comment = await PostService.createComment(postId, userId, content, parentId);
+    res.status(201).json(comment);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Dar like a un comentario
+router.post('/comments/:commentId/like', authMiddleware, async (req, res, next) => {
+  try {
+    const commentId = parseInt(req.params.commentId);
+    const userId = req.user?.id;
+
+    if (isNaN(commentId) || !userId) {
+      return res.status(400).json({ message: 'ID de comentario no válido' });
+    }
+
+    await PostService.likeComment(commentId, userId);
+    res.json({ message: 'Like agregado al comentario' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Quitar like de un comentario
+router.delete('/comments/:commentId/like', authMiddleware, async (req, res, next) => {
+  try {
+    const commentId = parseInt(req.params.commentId);
+    const userId = req.user?.id;
+
+    if (isNaN(commentId) || !userId) {
+      return res.status(400).json({ message: 'ID de comentario no válido' });
+    }
+
+    await PostService.unlikeComment(commentId, userId);
+    res.json({ message: 'Like eliminado del comentario' });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;

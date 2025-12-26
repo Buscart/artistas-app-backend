@@ -26,11 +26,69 @@ const createHiringResponseSchema = z.object({
 /**
  * Obtener todas las ofertas de trabajo activas (público)
  * GET /api/v1/hiring
+ * Query params: category, priceMin, priceMax, modality, limit, offset
  */
 export const getAllHiringRequests = async (req: Request, res: Response) => {
   try {
-    const requests = await hiringStorage.getActiveHiringRequests();
-    res.json({ success: true, data: requests });
+    const {
+      category,
+      priceMin,
+      priceMax,
+      modality,
+      limit = '50',
+      offset = '0'
+    } = req.query;
+
+    let requests = await hiringStorage.getActiveHiringRequests();
+
+    // Aplicar filtros
+    if (category && typeof category === 'string') {
+      requests = requests.filter(r =>
+        r.details?.toLowerCase().includes(category.toLowerCase())
+      );
+    }
+
+    if (priceMin && typeof priceMin === 'string') {
+      const min = parseFloat(priceMin);
+      requests = requests.filter(r => {
+        const budget = parseFloat(r.budget || '0');
+        return budget >= min;
+      });
+    }
+
+    if (priceMax && typeof priceMax === 'string') {
+      const max = parseFloat(priceMax);
+      requests = requests.filter(r => {
+        const budget = parseFloat(r.budget || '0');
+        return budget <= max;
+      });
+    }
+
+    if (modality && typeof modality === 'string') {
+      const modalities = modality.split(',');
+      requests = requests.filter(r =>
+        modalities.some(m =>
+          r.details?.toLowerCase().includes(m.toLowerCase())
+        )
+      );
+    }
+
+    // Paginación
+    const limitNum = parseInt(limit as string);
+    const offsetNum = parseInt(offset as string);
+    const total = requests.length;
+    const paginatedRequests = requests.slice(offsetNum, offsetNum + limitNum);
+
+    res.json({
+      success: true,
+      data: paginatedRequests,
+      pagination: {
+        total,
+        limit: limitNum,
+        offset: offsetNum,
+        hasMore: offsetNum + limitNum < total
+      }
+    });
   } catch (error) {
     console.error('Error getting hiring requests:', error);
     res.status(500).json({ success: false, error: 'Error al obtener las ofertas' });

@@ -78,6 +78,9 @@ class ExplorerController {
           totalReviews: users.totalReviews,
           userType: users.userType,
           isVerified: users.isVerified,
+          isAvailable: users.isAvailable,
+          website: users.website,
+          socialMedia: users.socialMedia,
           artistData: {
             id: artists.id,
             artistName: artists.artistName,
@@ -86,6 +89,18 @@ class ExplorerController {
             tags: artists.tags,
             pricePerHour: artists.pricePerHour,
             baseCity: artists.baseCity,
+            yearsOfExperience: artists.yearsOfExperience,
+            experience: artists.experience,
+            artistType: artists.artistType,
+            travelAvailability: artists.travelAvailability,
+            travelDistance: artists.travelDistance,
+            hourlyRate: artists.hourlyRate,
+            pricingType: artists.pricingType,
+            priceRange: artists.priceRange,
+            availability: artists.availability,
+            languages: artists.languages,
+            licenses: artists.licenses,
+            linkedAccounts: artists.linkedAccounts,
           },
         })
         .from(users)

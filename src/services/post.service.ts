@@ -99,7 +99,14 @@ export class PostService {
   /**
    * Obtiene todos los posts con paginación y filtrado opcional
    */
-  static async getAllPosts(limit = 10, offset = 0, type?: 'post' | 'nota' | 'blog') {
+  static async getAllPosts(
+    limit = 10,
+    offset = 0,
+    type?: 'post' | 'nota' | 'blog',
+    userId?: string,
+    followingOnly?: boolean,
+    category?: string
+  ) {
     const query = db
       .select({
         ...getPostFields(),
@@ -130,18 +137,43 @@ export class PostService {
       .limit(limit)
       .offset(offset);
 
+    // Build where conditions
+    const conditions = [];
+
     // Aplicar filtro de tipo si se especifica
     if (type) {
-      query.where(eq(posts.type, type));
+      conditions.push(eq(posts.type, type));
+    }
+
+    // Filter by following if requested
+    if (followingOnly && userId) {
+      conditions.push(sql`${posts.authorId} IN (
+        SELECT following_id FROM follows WHERE follower_id = ${userId}
+      )`);
+    }
+
+    // Filter by category if specified
+    if (category) {
+      conditions.push(sql`${users.id} IN (
+        SELECT user_id FROM artists
+        WHERE category_id = (SELECT id FROM categories WHERE LOWER(name) = LOWER(${category}))
+      )`);
+    }
+
+    // Apply all conditions
+    if (conditions.length > 0) {
+      query.where(and(...conditions));
     }
 
     // Obtener el total de posts (para paginación)
     const totalQuery = db
       .select({ count: sql<number>`count(*)::int` })
-      .from(posts);
+      .from(posts)
+      .leftJoin(users, eq(posts.authorId, users.id));
 
-    if (type) {
-      totalQuery.where(eq(posts.type, type));
+    // Apply same filters to count query
+    if (conditions.length > 0) {
+      totalQuery.where(and(...conditions));
     }
 
     const [rawPostsResult, totalResult] = await Promise.all([
@@ -271,6 +303,188 @@ export class PostService {
     }));
 
     return await db.insert(postMedia).values(postMediaData).returning();
+  }
+
+  /**
+   * Da like a un post
+   */
+  static async likePost(postId: number, userId: string) {
+    await db.execute(sql`
+      INSERT INTO post_likes (post_id, user_id, created_at)
+      VALUES (${postId}, ${userId}, NOW())
+      ON CONFLICT (post_id, user_id) DO NOTHING
+    `);
+
+    // Incrementar el contador de likes
+    await db
+      .update(posts)
+      .set({ likeCount: sql`${posts.likeCount} + 1` })
+      .where(eq(posts.id, postId));
+  }
+
+  /**
+   * Quita el like de un post
+   */
+  static async unlikePost(postId: number, userId: string) {
+    await db.execute(sql`
+      DELETE FROM post_likes
+      WHERE post_id = ${postId} AND user_id = ${userId}
+    `);
+
+    // Decrementar el contador de likes
+    await db
+      .update(posts)
+      .set({ likeCount: sql`GREATEST(0, ${posts.likeCount} - 1)` })
+      .where(eq(posts.id, postId));
+  }
+
+  /**
+   * Comparte un post
+   */
+  static async sharePost(postId: number, userId: string, content?: string) {
+    // Crear un nuevo post que es una compartida del original
+    const sharedPost = await this.createPost({
+      content: content || '',
+      type: 'post',
+      isPublic: true,
+      authorId: userId,
+      // Guardar el ID del post original en metadata
+      metadata: { sharedPostId: postId }
+    });
+
+    // Incrementar el contador de compartidas del post original
+    await db
+      .update(posts)
+      .set({ shareCount: sql`${posts.shareCount} + 1` })
+      .where(eq(posts.id, postId));
+
+    return sharedPost;
+  }
+
+  /**
+   * Obtiene los comentarios de un post
+   */
+  static async getComments(postId: number) {
+    console.log('🔵 Getting comments for post:', postId);
+
+    const result = await db.execute(sql`
+      SELECT
+        c.id,
+        c.content,
+        c.parent_id as "parentId",
+        c.created_at as "createdAt",
+        c.like_count as likes,
+        u.id as "authorId",
+        u.first_name || ' ' || COALESCE(u.last_name, '') as "authorName",
+        u.username,
+        u.profile_image_url as "authorAvatar",
+        u.is_verified as verified
+      FROM comments c
+      LEFT JOIN users u ON c.user_id = u.id
+      WHERE c.post_id = ${postId}
+      ORDER BY c.created_at ASC
+    `);
+
+    console.log('🟢 Comments query result full:', JSON.stringify(result, null, 2));
+    console.log('🟡 Result type:', typeof result);
+    console.log('🟡 Result keys:', Object.keys(result));
+    console.log('🟡 Result.rows:', result.rows);
+    console.log('🟡 Result as array:', Array.isArray(result) ? result : 'not an array');
+
+    // Manejar diferentes formatos posibles
+    const comments = result.rows || (Array.isArray(result) ? result : []);
+    console.log('📤 Returning comments:', comments.length, comments);
+
+    return comments;
+  }
+
+  /**
+   * Crea un comentario en un post
+   */
+  static async createComment(postId: number, userId: string, content: string, parentId?: number) {
+    console.log('🔵 Creating comment:', { postId, userId, content, parentId });
+
+    const result = await db.execute(sql`
+      INSERT INTO comments (post_id, user_id, content, parent_id, created_at, like_count)
+      VALUES (${postId}, ${userId}, ${content}, ${parentId || null}, NOW(), 0)
+      RETURNING id, content, parent_id as "parentId", created_at as "createdAt", like_count as likes, user_id
+    `);
+
+    console.log('🟢 Insert result:', { result, rows: result.rows, rowCount: result.rowCount });
+
+    // Incrementar el contador de comentarios del post
+    await db
+      .update(posts)
+      .set({ commentCount: sql`${posts.commentCount} + 1` })
+      .where(eq(posts.id, postId));
+
+    // Manejar diferentes formatos de resultado
+    const comment = result.rows?.[0] || result[0];
+
+    console.log('🟡 Comment from result:', comment);
+
+    if (!comment) {
+      console.error('❌ No comment returned from INSERT. Result:', JSON.stringify(result, null, 2));
+      throw new Error('Failed to create comment');
+    }
+
+    // Obtener información del autor
+    const authorResult = await db.execute(sql`
+      SELECT
+        u.id as "authorId",
+        u.first_name || ' ' || COALESCE(u.last_name, '') as "authorName",
+        u.username,
+        u.profile_image_url as "authorAvatar",
+        u.is_verified as verified
+      FROM users u
+      WHERE u.id = ${userId}
+    `);
+
+    const author = authorResult.rows?.[0] || authorResult[0];
+
+    console.log('🟢 Returning comment with author:', { comment, author });
+
+    return {
+      ...comment,
+      authorId: author?.authorId || userId,
+      authorName: author?.authorName || 'Unknown User',
+      username: author?.username,
+      authorAvatar: author?.authorAvatar,
+      verified: author?.verified || false,
+    };
+  }
+
+  /**
+   * Da like a un comentario
+   */
+  static async likeComment(commentId: number, userId: string) {
+    await db.execute(sql`
+      INSERT INTO comment_likes (comment_id, user_id, created_at)
+      VALUES (${commentId}, ${userId}, NOW())
+      ON CONFLICT (comment_id, user_id) DO NOTHING
+    `);
+
+    await db.execute(sql`
+      UPDATE comments
+      SET like_count = like_count + 1
+      WHERE id = ${commentId}
+    `);
+  }
+
+  /**
+   * Quita el like de un comentario
+   */
+  static async unlikeComment(commentId: number, userId: string) {
+    await db.execute(sql`
+      DELETE FROM comment_likes
+      WHERE comment_id = ${commentId} AND user_id = ${userId}
+    `);
+
+    await db.execute(sql`
+      UPDATE comments
+      SET like_count = GREATEST(0, like_count - 1)
+      WHERE id = ${commentId}
+    `);
   }
 }
 
