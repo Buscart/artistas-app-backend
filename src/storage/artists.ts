@@ -164,13 +164,26 @@ export class ArtistStorage {
       gallery?: unknown[];
       yearsOfExperience?: number | null;
       baseCity?: string | null;
-      // Nuevos campos de perfil profesional
+      // Campos de perfil profesional
       education?: unknown[] | null;
       languages?: unknown[] | null;
-      hourlyRate?: number | null;
+      hourlyRate?: string | null;
       pricingType?: 'hourly' | 'deliverable' | 'depends' | null;
       licenses?: unknown[] | null;
       linkedAccounts?: Record<string, unknown> | null;
+      workExperience?: unknown[] | null;
+      // Información profesional adicional
+      experience?: number | null;
+      artistType?: 'solo' | 'duo' | 'trio' | 'band' | 'collective' | null;
+      travelAvailability?: boolean | null;
+      travelDistance?: number | null;
+      priceRange?: Record<string, unknown> | null;
+      // Jerarquía de artista
+      disciplineId?: number | null;
+      roleId?: number | null;
+      specializationId?: number | null;
+      additionalTalents?: number[] | null;
+      customStats?: Record<string, unknown> | null;
     }
   ) {
     const [artist] = await this.db

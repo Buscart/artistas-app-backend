@@ -7,16 +7,23 @@ const router = Router();
 // Obtener usuarios sugeridos
 router.get('/users/suggested', authMiddleware, async (req, res, next) => {
   try {
+    console.log('📥 GET /users/suggested - Request received');
     const userId = req.user?.id;
     const { limit = '3' } = req.query;
 
+    console.log('👤 User ID from token:', userId);
+    console.log('🔢 Requested limit:', limit);
+
     if (!userId) {
+      console.log('❌ No user ID - returning 401');
       return res.status(401).json({ message: 'No autorizado' });
     }
 
     const users = await SocialService.getSuggestedUsers(userId, parseInt(limit as string));
+    console.log('✅ Sending response with', users.length, 'users');
     res.json({ users });
   } catch (error) {
+    console.error('❌ Error in /users/suggested endpoint:', error);
     next(error);
   }
 });

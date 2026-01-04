@@ -214,7 +214,9 @@ export const artists = pgTable('artists', {
   education: jsonb('education').default(sql`'[]'::jsonb`), // Array de { degree, institution, year }
   languages: jsonb('languages').default(sql`'[]'::jsonb`), // Array de { language, level }
   licenses: jsonb('licenses').default(sql`'[]'::jsonb`), // Array de { name, issuer, date }
+  certifications: jsonb('certifications').default(sql`'[]'::jsonb`), // Array de { name, issuer, date }
   linkedAccounts: jsonb('linked_accounts').default(sql`'{}'::jsonb`), // { instagram, behance, linkedin, website }
+  workExperience: jsonb('work_experience').default(sql`'[]'::jsonb`), // Array de { position, company, startYear, endYear, description }
 
   // Estadísticas
   rating: numeric('rating', { precision: 3, scale: 2 }).default(sql`0`),

@@ -8,24 +8,34 @@ export class SocialService {
    * @param limit Número de usuarios a obtener
    */
   static async getSuggestedUsers(userId: string, limit: number = 3) {
-    const result = await db.execute(sql`
-      SELECT
-        u.id,
-        u.first_name || ' ' || u.last_name AS name,
-        u.username,
-        u.profile_image_url AS avatar,
-        CASE WHEN u.is_verified = true THEN true ELSE false END AS verified,
-        u.bio
-      FROM users u
-      WHERE u.id != ${userId}
-        AND u.id NOT IN (
-          SELECT following_id FROM follows WHERE follower_id = ${userId}
-        )
-      ORDER BY RANDOM()
-      LIMIT ${limit}
-    `);
+    try {
+      console.log('🔍 getSuggestedUsers - userId:', userId, 'limit:', limit);
 
-    return result.rows || [];
+      const result = await db.execute(sql`
+        SELECT
+          u.id,
+          u.first_name || ' ' || u.last_name AS name,
+          u.username,
+          u.profile_image_url AS avatar,
+          CASE WHEN u.is_verified = true THEN true ELSE false END AS verified,
+          u.bio
+        FROM users u
+        WHERE u.id != ${userId}
+          AND u.id NOT IN (
+            SELECT following_id FROM follows WHERE follower_id = ${userId}
+          )
+        ORDER BY RANDOM()
+        LIMIT ${limit}
+      `);
+
+      console.log('✅ Found suggested users:', result.rows.length);
+      console.log('📋 Users:', result.rows);
+
+      return result.rows || [];
+    } catch (error) {
+      console.error('❌ Error getting suggested users:', error);
+      return [];
+    }
   }
 
   /**

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { db } from '../db.js';
 import { and, eq, gte, lte, or, sql, SQL, desc, inArray } from 'drizzle-orm';
-import { users, artists, events, venues, services, artworks, categories } from '../schema.js';
+import { users, artists, events, venues, services, artworks, categories, highlightPhotos } from '../schema.js';
 
 /**
  * Controlador para el explorador
@@ -117,8 +117,27 @@ class ExplorerController {
         .leftJoin(artists, eq(users.id, artists.userId))
         .where(whereCondition);
 
+      // Obtener fotos destacadas para cada artista
+      const artistsWithPhotos = await Promise.all(
+        artistsList.map(async (artist) => {
+          const featuredPhotos = await db
+            .select({
+              imageUrl: highlightPhotos.imageUrl,
+            })
+            .from(highlightPhotos)
+            .where(eq(highlightPhotos.userId, artist.id))
+            .orderBy(highlightPhotos.position)
+            .limit(4);
+
+          return {
+            ...artist,
+            highlightPhotos: featuredPhotos.map(photo => photo.imageUrl),
+          };
+        })
+      );
+
       res.status(200).json({
-        data: artistsList,
+        data: artistsWithPhotos,
         pagination: {
           total: Number(totalResult?.count) || 0,
           limit: Number(limit),

@@ -287,6 +287,21 @@ export const getPublicProfile = async (req: Request, res: Response) => {
           tags: artist.tags || [],
           portfolioUrl: null, // El portfolio se obtiene desde portfolioPhotos
           baseCity: artist.baseCity || profile.city,
+          // Información académica y profesional
+          education: artist.education || [],
+          languages: artist.languages || [],
+          licenses: artist.licenses || [],
+          linkedAccounts: artist.linkedAccounts || {},
+          workExperience: artist.workExperience || [],
+          // Información de precios
+          hourlyRate: artist.hourlyRate,
+          pricingType: artist.pricingType,
+          priceRange: artist.priceRange,
+          // Información profesional adicional
+          experience: artist.experience,
+          artistType: artist.artistType,
+          travelAvailability: artist.travelAvailability,
+          travelDistance: artist.travelDistance,
         };
 
         // Obtener trabajos destacados del portafolio

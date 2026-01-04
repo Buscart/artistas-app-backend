@@ -284,6 +284,21 @@ protectedRoutes.put('/artist/me', (async (req: any, res: Response) => {
       pricePerHour,
       yearsOfExperience,
       portfolio,
+      // Información académica y profesional adicional
+      education,
+      languages,
+      licenses,
+      linkedAccounts,
+      workExperience,
+      // Información profesional
+      experience,
+      artistType,
+      travelAvailability,
+      travelDistance,
+      // Precios
+      hourlyRate,
+      pricingType,
+      priceRange,
     } = req.body || {};
 
     console.log('🔵 PUT /artist/me - req.body:', JSON.stringify({
@@ -331,6 +346,13 @@ protectedRoutes.put('/artist/me', (async (req: any, res: Response) => {
     const found = await storage.getArtists({ userId });
     const existing = found[0];
 
+    console.log('🔍 Buscando artista existente:', { userId, found: found.length, existing: !!existing, existingId: existing?.artist?.id });
+
+    if (!existing || !existing.artist) {
+      console.log('❌ No se encontró perfil de artista para el usuario:', userId);
+      return res.status(404).json({ message: 'Perfil de artista no encontrado' });
+    }
+
     // Normalizar payload parcial permitido
     const artistPayload: Partial<typeof import('../schema.js').artists.$inferInsert> = {
       artistName,
@@ -352,6 +374,21 @@ protectedRoutes.put('/artist/me', (async (req: any, res: Response) => {
       pricePerHour: typeof pricePerHour === 'number' ? pricePerHour.toString() : undefined,
       yearsOfExperience: typeof yearsOfExperience === 'number' ? yearsOfExperience : undefined,
       portfolio: portfolio && typeof portfolio === 'object' ? portfolio : undefined,
+      // Información académica y profesional adicional
+      education: Array.isArray(education) ? education : undefined,
+      languages: Array.isArray(languages) ? languages : undefined,
+      licenses: Array.isArray(licenses) ? licenses : undefined,
+      linkedAccounts: linkedAccounts && typeof linkedAccounts === 'object' ? linkedAccounts : undefined,
+      workExperience: Array.isArray(workExperience) ? workExperience : undefined,
+      // Información profesional
+      experience: typeof experience === 'number' ? experience : undefined,
+      artistType: artistType ? artistType : undefined,
+      travelAvailability: typeof travelAvailability === 'boolean' ? travelAvailability : undefined,
+      travelDistance: typeof travelDistance === 'number' ? travelDistance : undefined,
+      // Precios
+      hourlyRate: typeof hourlyRate === 'number' ? hourlyRate.toString() : undefined,
+      pricingType: pricingType ? pricingType : undefined,
+      priceRange: priceRange && typeof priceRange === 'object' ? priceRange : undefined,
     };
 
     console.log('🟢 artistPayload procesado:', JSON.stringify({
@@ -364,6 +401,11 @@ protectedRoutes.put('/artist/me', (async (req: any, res: Response) => {
       safeCategoryId,
       tags: artistPayload.tags,
       pricePerHour: artistPayload.pricePerHour,
+      workExperience: artistPayload.workExperience,
+      education: artistPayload.education,
+      languages: artistPayload.languages,
+      hourlyRate: artistPayload.hourlyRate,
+      pricingType: artistPayload.pricingType,
     }, null, 2));
 
     // Crear si no existe
@@ -394,11 +436,32 @@ protectedRoutes.put('/artist/me', (async (req: any, res: Response) => {
     }
 
     // Actualizar si existe
-    const updated = await storage.updateArtist(existing.id, artistPayload as any);
+    // Limpiar campos undefined del payload (Postgres no acepta undefined)
+    const cleanPayload = Object.fromEntries(
+      Object.entries(artistPayload).filter(([_, v]) => v !== undefined)
+    );
+
+    console.log('🧹 cleanPayload después de filtrar undefined:', JSON.stringify(cleanPayload, null, 2));
+    console.log('🔑 cleanPayload keys:', Object.keys(cleanPayload));
+
+    const updated = await storage.updateArtist(existing.artist.id, cleanPayload as any);
     return res.json(updated);
-  } catch (e) {
+  } catch (e: any) {
     console.error('Error updating my artist profile:', e);
-    return res.status(500).json({ message: 'Error al actualizar el perfil de artista' });
+    const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred';
+    const errorStack = e instanceof Error ? e.stack : 'No stack trace available';
+    console.error('Detailed error:', {
+        message: errorMessage,
+        stack: errorStack,
+        body: req.body
+    });
+    return res.status(500).json({
+        message: 'Error al actualizar el perfil de artista',
+        error: {
+            message: errorMessage,
+            stack: errorStack
+        }
+    });
   }
 }) as RouteHandler);
 

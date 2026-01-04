@@ -248,10 +248,20 @@ export class DatabaseStorage implements IStorage {
     artistData: Partial<typeof artists.$inferInsert>
   ): Promise<typeof artists.$inferSelect> {
     try {
+      console.log('🔧 storage.updateArtist - artistData ANTES de limpiar:', Object.keys(artistData));
+
+      // Limpiar undefined values antes de actualizar (Postgres no acepta undefined)
+      const cleanData = Object.fromEntries(
+        Object.entries(artistData).filter(([_, v]) => v !== undefined)
+      );
+
+      console.log('🧹 storage.updateArtist - cleanData DESPUÉS de limpiar:', Object.keys(cleanData));
+      console.log('🧹 storage.updateArtist - cleanData valores:', JSON.stringify(cleanData, null, 2));
+
       const [updatedArtist] = await this.db
         .update(artists)
         .set({
-          ...artistData,
+          ...cleanData,
           updatedAt: new Date()
         })
         .where(eq(artists.id, id))
