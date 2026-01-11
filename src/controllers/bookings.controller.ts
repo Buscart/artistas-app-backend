@@ -91,6 +91,7 @@ export const bookingsController = {
 
       const {
         companyId,
+        artistId,
         venueId,
         bookingType,
         title,
@@ -113,9 +114,9 @@ export const bookingsController = {
         clientNotes,
       } = req.body;
 
-      if (!companyId || !bookingType || !title || !startDate || !endDate || !contactName || !contactEmail) {
+      if ((!companyId && !artistId) || !bookingType || !title || !startDate || !endDate || !contactName || !contactEmail) {
         return res.status(400).json({
-          message: 'Los campos companyId, bookingType, title, startDate, endDate, contactName y contactEmail son requeridos'
+          message: 'Los campos bookingType, title, startDate, endDate, contactName y contactEmail son requeridos. Debes especificar companyId o artistId.'
         });
       }
 
@@ -129,7 +130,8 @@ export const bookingsController = {
       const newBooking = await storage.db
         .insert(bookings)
         .values({
-          companyId: parseInt(companyId),
+          companyId: companyId ? parseInt(companyId) : null,
+          artistId: artistId ? parseInt(artistId) : null,
           venueId: venueId ? parseInt(venueId) : null,
           userId,
           bookingType,

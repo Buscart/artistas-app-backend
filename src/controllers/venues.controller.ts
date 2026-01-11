@@ -12,7 +12,14 @@ export const venuesController = {
       // Obtener parámetros de filtro
       const { city, venue_type, min_capacity, max_capacity, min_price, max_price, available, limit, offset } = req.query;
 
-      let query = storage.db.select().from(venues);
+      // Query con LEFT JOIN a companies para obtener datos de la empresa
+      let query: any = storage.db
+        .select({
+          venue: venues,
+          company: companies
+        })
+        .from(venues)
+        .leftJoin(companies, eq(venues.companyId, companies.id));
 
       // Aplicar filtros si existen
       const conditions = [];
@@ -33,27 +40,33 @@ export const venuesController = {
         query = query.where(and(...conditions));
       }
 
-      let allVenues = await query.orderBy(venues.createdAt);
+      const results = await query.orderBy(venues.createdAt);
+
+      // Extraer venues con sus empresas
+      let allVenues = results.map((r: any) => ({
+        ...r.venue,
+        company: r.company // Incluir datos de la empresa
+      }));
 
       // Filtros adicionales que requieren código (min/max)
       if (min_capacity) {
         const minCap = parseInt(min_capacity as string);
-        allVenues = allVenues.filter(v => v.capacity && v.capacity >= minCap);
+        allVenues = allVenues.filter((v: any) => v.capacity && v.capacity >= minCap);
       }
 
       if (max_capacity) {
         const maxCap = parseInt(max_capacity as string);
-        allVenues = allVenues.filter(v => v.capacity && v.capacity <= maxCap);
+        allVenues = allVenues.filter((v: any) => v.capacity && v.capacity <= maxCap);
       }
 
       if (min_price) {
         const minPr = parseFloat(min_price as string);
-        allVenues = allVenues.filter(v => v.dailyRate && parseFloat(v.dailyRate) >= minPr);
+        allVenues = allVenues.filter((v: any) => v.dailyRate && parseFloat(v.dailyRate) >= minPr);
       }
 
       if (max_price) {
         const maxPr = parseFloat(max_price as string);
-        allVenues = allVenues.filter(v => v.dailyRate && parseFloat(v.dailyRate) <= maxPr);
+        allVenues = allVenues.filter((v: any) => v.dailyRate && parseFloat(v.dailyRate) <= maxPr);
       }
 
       // Aplicar paginación
@@ -62,24 +75,36 @@ export const venuesController = {
       const paginatedVenues = allVenues.slice(start, end);
 
       // Transformar datos para coincidir con el formato del frontend
-      const transformedVenues = paginatedVenues.map(venue => ({
+      const transformedVenues = paginatedVenues.map((venue: any) => ({
         id: venue.id,
+        companyId: venue.companyId, // ✅ Agregado: ID de la empresa asociada
         name: venue.name,
         description: venue.description || '',
         venue_type: venue.venueType || '',
+        venueType: venue.venueType || '', // Añadido para compatibilidad
         address: venue.address || '',
         city: venue.city || '',
         state: '', // No tenemos estado en DB
         country: 'Colombia',
         capacity: venue.capacity || 0,
         amenities: venue.services || [],
+        services: venue.services || [], // Añadido para compatibilidad
         price_per_hour: venue.dailyRate || '0',
+        dailyRate: venue.dailyRate || '0', // Añadido para compatibilidad
         available: venue.isAvailable || false,
-        images: (venue.multimedia as any)?.images || [],
+        isAvailable: venue.isAvailable || false, // Añadido para compatibilidad
+        images: (venue.multimedia as any)?.gallery || (venue.multimedia as any)?.images || [],
+        multimedia: venue.multimedia || {}, // Añadido: multimedia completo
+        contact: venue.contact || {}, // Añadido: información de contacto
+        openingHours: venue.openingHours || {}, // Añadido: horarios
+        coordinates: venue.coordinates || null, // Añadido: coordenadas
         rating: venue.rating ? parseFloat(venue.rating.toString()) : 0,
         total_reviews: venue.totalReviews || 0,
+        totalReviews: venue.totalReviews || 0, // Añadido para compatibilidad
         created_at: venue.createdAt?.toISOString() || new Date().toISOString(),
-        updated_at: venue.updatedAt?.toISOString() || new Date().toISOString()
+        updated_at: venue.updatedAt?.toISOString() || new Date().toISOString(),
+        createdAt: venue.createdAt,
+        updatedAt: venue.updatedAt
       }));
 
       console.log(`✅ Se encontraron ${allVenues.length} venues (mostrando ${paginatedVenues.length})`);

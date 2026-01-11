@@ -388,11 +388,11 @@ export class PostService {
     console.log('🟢 Comments query result full:', JSON.stringify(result, null, 2));
     console.log('🟡 Result type:', typeof result);
     console.log('🟡 Result keys:', Object.keys(result));
-    console.log('🟡 Result.rows:', result.rows);
+    console.log('🟡 Result.rows:', (result as any).rows);
     console.log('🟡 Result as array:', Array.isArray(result) ? result : 'not an array');
 
     // Manejar diferentes formatos posibles
-    const comments = result.rows || (Array.isArray(result) ? result : []);
+    const comments = (result as any).rows || (Array.isArray(result) ? result : []);
     console.log('📤 Returning comments:', comments.length, comments);
 
     return comments;
@@ -401,16 +401,61 @@ export class PostService {
   /**
    * Crea un comentario en un post
    */
-  static async createComment(postId: number, userId: string, content: string, parentId?: number) {
-    console.log('🔵 Creating comment:', { postId, userId, content, parentId });
+  static async createComment(
+    postId: number,
+    userId: string,
+    content: string,
+    parentId?: number,
+    images?: string[],
+    mentions?: string[],
+    taggedArtists?: number[],
+    taggedEvents?: number[],
+    poll?: { question: string; options: string[] }
+  ) {
+    console.log('🔵 Creating comment:', { postId, userId, content, parentId, images, mentions, taggedArtists, taggedEvents, poll });
 
     const result = await db.execute(sql`
-      INSERT INTO comments (post_id, user_id, content, parent_id, created_at, like_count)
-      VALUES (${postId}, ${userId}, ${content}, ${parentId || null}, NOW(), 0)
-      RETURNING id, content, parent_id as "parentId", created_at as "createdAt", like_count as likes, user_id
+      INSERT INTO comments (
+        post_id,
+        user_id,
+        content,
+        parent_id,
+        images,
+        mentions,
+        tagged_artists,
+        tagged_events,
+        poll,
+        created_at,
+        like_count
+      )
+      VALUES (
+        ${postId},
+        ${userId},
+        ${content},
+        ${parentId || null},
+        ${images ? sql`ARRAY[${sql.join(images.map(img => sql`${img}`), sql`, `)}]::text[]` : sql`'{}'::text[]`},
+        ${mentions ? sql`ARRAY[${sql.join(mentions.map(m => sql`${m}`), sql`, `)}]::text[]` : sql`'{}'::text[]`},
+        ${taggedArtists ? sql`ARRAY[${sql.join(taggedArtists.map(a => sql`${a}`), sql`, `)}]::integer[]` : sql`'{}'::integer[]`},
+        ${taggedEvents ? sql`ARRAY[${sql.join(taggedEvents.map(e => sql`${e}`), sql`, `)}]::integer[]` : sql`'{}'::integer[]`},
+        ${poll ? sql`${JSON.stringify(poll)}::jsonb` : null},
+        NOW(),
+        0
+      )
+      RETURNING
+        id,
+        content,
+        parent_id as "parentId",
+        images,
+        mentions,
+        tagged_artists as "taggedArtists",
+        tagged_events as "taggedEvents",
+        poll,
+        created_at as "createdAt",
+        like_count as likes,
+        user_id
     `);
 
-    console.log('🟢 Insert result:', { result, rows: result.rows, rowCount: result.rowCount });
+    console.log('🟢 Insert result:', { result, rows: (result as any).rows, rowCount: (result as any).rowCount });
 
     // Incrementar el contador de comentarios del post
     await db
@@ -419,7 +464,7 @@ export class PostService {
       .where(eq(posts.id, postId));
 
     // Manejar diferentes formatos de resultado
-    const comment = result.rows?.[0] || result[0];
+    const comment = (result as any).rows?.[0] || result[0];
 
     console.log('🟡 Comment from result:', comment);
 
@@ -440,7 +485,7 @@ export class PostService {
       WHERE u.id = ${userId}
     `);
 
-    const author = authorResult.rows?.[0] || authorResult[0];
+    const author = (authorResult as any).rows?.[0] || authorResult[0];
 
     console.log('🟢 Returning comment with author:', { comment, author });
 

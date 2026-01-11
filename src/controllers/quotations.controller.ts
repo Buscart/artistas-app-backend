@@ -12,7 +12,7 @@ const createQuotationSchema = z.object({
   budgetMax: z.number().min(0).optional(),
   preferredDate: z.string().optional(),
   location: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 const respondQuotationSchema = z.object({

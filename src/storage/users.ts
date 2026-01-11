@@ -1,6 +1,6 @@
 import type { Database } from '../types/db.js';
 import { users } from '../schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, or, ilike, sql } from 'drizzle-orm';
 
 export class UserStorage {
   constructor(private db: Database) {}
@@ -104,5 +104,24 @@ export class UserStorage {
       .returning();
 
     return newUser;
+  }
+
+  async searchUsers(query: string, limit: number = 5): Promise<typeof users.$inferSelect[]> {
+    // Buscar por nombre, apellido, username o displayName
+    const results = await this.db
+      .select()
+      .from(users)
+      .where(
+        or(
+          ilike(users.firstName, `%${query}%`),
+          ilike(users.lastName, `%${query}%`),
+          ilike(users.username, `%${query}%`),
+          ilike(users.displayName, `%${query}%`),
+          sql`CONCAT(${users.firstName}, ' ', ${users.lastName}) ILIKE ${'%' + query + '%'}`
+        )
+      )
+      .limit(limit);
+
+    return results;
   }
 }

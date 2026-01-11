@@ -51,7 +51,7 @@ blogRoutes.get('/', readUserRateLimit, asyncHandler(async (req, res) => {
   const category = req.query.category as string;
   const search = req.query.search as string;
 
-  let query = db
+  let query: any = db
     .select({
       id: blogPosts.id,
       title: blogPosts.title,
@@ -156,6 +156,76 @@ blogRoutes.get('/me', authMiddleware, readUserRateLimit, asyncHandler(async (req
     .from(blogPosts)
     .where(eq(blogPosts.authorId, userId))
     .orderBy(desc(blogPosts.createdAt));
+
+  res.json({
+    success: true,
+    data: posts,
+  });
+}));
+
+/**
+ * @swagger
+ * /api/v1/blog/user/{userId}:
+ *   get:
+ *     summary: Obtener publicaciones de un usuario específico
+ *     description: Obtiene todas las publicaciones públicas de un usuario
+ *     tags: [Blog]
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Publicaciones obtenidas exitosamente
+ */
+// GET /api/v1/blog/user/:userId - Obtener publicaciones públicas de un usuario
+blogRoutes.get('/user/:userId', readUserRateLimit, asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+
+  const posts = await db
+    .select({
+      id: blogPosts.id,
+      title: blogPosts.title,
+      slug: blogPosts.slug,
+      subtitle: blogPosts.subtitle,
+      excerpt: blogPosts.excerpt,
+      content: blogPosts.content,
+      category: blogPosts.category,
+      subcategories: blogPosts.subcategories,
+      tags: blogPosts.tags,
+      featuredImage: blogPosts.featuredImage,
+      gallery: blogPosts.gallery,
+      videoUrl: blogPosts.videoUrl,
+      readingTime: blogPosts.readingTime,
+      viewCount: blogPosts.viewCount,
+      likeCount: blogPosts.likeCount,
+      commentCount: blogPosts.commentCount,
+      shareCount: blogPosts.shareCount,
+      saveCount: blogPosts.saveCount,
+      visibility: blogPosts.visibility,
+      allowComments: blogPosts.allowComments,
+      isFeatured: blogPosts.isFeatured,
+      isVerified: blogPosts.isVerified,
+      publishedAt: blogPosts.publishedAt,
+      createdAt: blogPosts.createdAt,
+      updatedAt: blogPosts.updatedAt,
+      author: {
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        displayName: users.displayName,
+        profileImageUrl: users.profileImageUrl,
+      }
+    })
+    .from(blogPosts)
+    .leftJoin(users, eq(blogPosts.authorId, users.id))
+    .where(and(
+      eq(blogPosts.authorId, userId),
+      eq(blogPosts.visibility, 'public')
+    ))
+    .orderBy(desc(blogPosts.publishedAt));
 
   res.json({
     success: true,

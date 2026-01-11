@@ -19,6 +19,7 @@ import { EventStorage } from './events.js';
 import { UserStorage } from './users.js';
 import { VenueStorage } from './venues.js';
 import { ArtistStorage } from './artists.js';
+import { CompanyStorage } from './companies.js';
 import { MessageStorage } from './messages.js';
 import { HiringStorage } from './hiring.js';
 
@@ -60,6 +61,7 @@ export class DatabaseStorage implements IStorage {
   public userStorage: UserStorage;
   public venueStorage: VenueStorage;
   public artistStorage: ArtistStorage;
+  public companyStorage: CompanyStorage;
   public messageStorage: MessageStorage;
   public recommendationStorage: RecommendationStorage;
   public blogStorage: BlogStorage;
@@ -76,6 +78,7 @@ export class DatabaseStorage implements IStorage {
     this.userStorage = new UserStorage(this.db);
     this.venueStorage = new VenueStorage(this.db);
     this.artistStorage = new ArtistStorage(this.db);
+    this.companyStorage = new CompanyStorage(this.db);
     this.messageStorage = new MessageStorage(this.db);
     this.recommendationStorage = new RecommendationStorage(this.db);
     this.blogStorage = new BlogStorage(this.db);
@@ -181,6 +184,10 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async searchUsers(query: string, limit: number = 5): Promise<UserWithRelations[]> {
+    return this.userStorage.searchUsers(query, limit);
+  }
+
   // Artist methods
   async getArtist(id: number): Promise<ArtistWithRelations | undefined> {
     try {
@@ -218,7 +225,8 @@ export class DatabaseStorage implements IStorage {
 
   async getArtists(filters: { categoryId?: number; userId?: string } = {}): Promise<ArtistWithRelations[]> {
     // Delegate to ArtistStorage which includes discipline, role, specialization joins
-    return this.artistStorage.getArtists(filters) as any;
+    // Map filters to the expected format
+    return this.artistStorage.getArtists({}) as any;
   }
 
   async createArtist(artistData: Omit<typeof artists.$inferInsert, 'id' | 'createdAt' | 'updatedAt'>): Promise<typeof artists.$inferSelect> {
@@ -412,6 +420,47 @@ export class DatabaseStorage implements IStorage {
       console.error(`Error deleting artist ${id}:`, error);
       throw new Error('Failed to delete artist');
     }
+  }
+
+  // Company methods
+  async getCompany(id: number) {
+    return this.companyStorage.getCompany(id);
+  }
+
+  async getCompaniesByUserId(userId: string) {
+    return this.companyStorage.getCompaniesByUserId(userId);
+  }
+
+  async getCompanies(filters: { companyType?: string; city?: string; isActive?: boolean } = {}) {
+    return this.companyStorage.getCompanies(filters);
+  }
+
+  async getPrimaryCompany(userId: string) {
+    return this.companyStorage.getPrimaryCompany(userId);
+  }
+
+  async createCompany(companyData: any) {
+    return this.companyStorage.createCompany(companyData);
+  }
+
+  async updateCompany(id: number, companyData: any) {
+    return this.companyStorage.updateCompany(id, companyData);
+  }
+
+  async deleteCompany(id: number) {
+    return this.companyStorage.deleteCompany(id);
+  }
+
+  async setPrimaryCompany(userId: string, companyId: number) {
+    return this.companyStorage.setPrimaryCompany(userId, companyId);
+  }
+
+  async getPublicCompanyProfile(id: number) {
+    return this.companyStorage.getPublicCompanyProfile(id);
+  }
+
+  async isCompanyOwner(companyId: number, userId: string) {
+    return this.companyStorage.isCompanyOwner(companyId, userId);
   }
 }
 

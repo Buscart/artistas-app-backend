@@ -8,6 +8,9 @@ const explorerRoutes = Router();
 // GET /api/v1/explorer - Obtener todos los datos del explorador
 explorerRoutes.get('/', ExplorerController.getAll);
 
+// GET /api/v1/explorer/artists/search - Buscar artistas
+explorerRoutes.get('/artists/search', ExplorerController.searchArtists);
+
 // GET /api/v1/explorer/artists - Obtener artistas
 explorerRoutes.get('/artists', ExplorerController.getArtists);
 

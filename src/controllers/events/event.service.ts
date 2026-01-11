@@ -1,5 +1,5 @@
-import { and, eq, gte, lte, ne, or, sql, SQL } from 'drizzle-orm';
-import { events, categories, users } from '../../schema.js';
+import { and, eq, gte, lte, ne, or, sql, SQL, count } from 'drizzle-orm';
+import { events, categories, users, eventAttendees } from '../../schema.js';
 import { db } from '../../db.js';
 import { generateUniqueSlug } from './event.utils.js';
 import { CreateEventInput, UpdateEventInput, EventFilterOptions } from './event.types.js';
@@ -13,7 +13,7 @@ export class EventService {
    */
   static async getEventById(eventId: number) {
     const event = await db.query.events.findFirst({
-      where: (events, { eq }) => eq(events.id, eventId),
+      where: (events: any, { eq }: any) => eq(events.id, eventId),
       with: {
         organizer: {
           columns: {
@@ -89,7 +89,8 @@ export class EventService {
       tags: eventData.tags || [],
       eventType: eventData.eventType || 'other',
       slug,
-      organizerId: userId,
+      organizerId: userId, // Usuario autenticado
+      companyId: eventData.companyId ? parseInt(eventData.companyId) : null, // Empresa organizadora
       viewCount: 0,
       saveCount: 0,
       shareCount: 0,
@@ -389,5 +390,346 @@ export class EventService {
       .limit(Number(limit));
 
     return upcomingEvents;
+  }
+
+  /**
+   * Registra un usuario para un evento (Luma-style)
+   */
+  static async registerForEvent(eventId: number, userId: string, ticketTypeId?: number) {
+    // Verificar si el evento existe
+    const [event] = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!event) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    // Verificar que el evento no esté cancelado
+    if (event.status === 'cancelled') {
+      throw new Error('EVENT_CANCELLED');
+    }
+
+    // Verificar si ya está registrado
+    const [existingRegistration] = await db
+      .select()
+      .from(eventAttendees)
+      .where(and(
+        eq(eventAttendees.eventId, eventId),
+        eq(eventAttendees.userId, userId)
+      ));
+
+    if (existingRegistration) {
+      throw new Error('ALREADY_REGISTERED');
+    }
+
+    // Obtener estadísticas actuales
+    const stats = await this.getAttendeeStats(eventId);
+
+    // Determinar estado inicial
+    let initialStatus: 'pending' | 'approved' | 'waitlisted' = 'pending';
+
+    if (!event.requiresApproval) {
+      // Si no requiere aprobación, aprobar automáticamente
+      if (event.capacity && stats.approved >= event.capacity) {
+        // Si está lleno y hay waitlist, poner en waitlist
+        if (event.enableWaitlist) {
+          initialStatus = 'waitlisted';
+        } else {
+          throw new Error('EVENT_FULL');
+        }
+      } else {
+        initialStatus = 'approved';
+      }
+    } else {
+      // Si requiere aprobación, dejar en pending
+      initialStatus = 'pending';
+    }
+
+    // Crear registro
+    const [newAttendee] = await db
+      .insert(eventAttendees)
+      .values({
+        eventId,
+        userId,
+        ticketTypeId: ticketTypeId || null,
+        status: initialStatus,
+        registeredAt: new Date(),
+        statusUpdatedAt: new Date(),
+      })
+      .returning();
+
+    return newAttendee;
+  }
+
+  /**
+   * Cancela el registro de un usuario para un evento
+   */
+  static async unregisterFromEvent(eventId: number, userId: string) {
+    const [registration] = await db
+      .select()
+      .from(eventAttendees)
+      .where(and(
+        eq(eventAttendees.eventId, eventId),
+        eq(eventAttendees.userId, userId)
+      ));
+
+    if (!registration) {
+      throw new Error('REGISTRATION_NOT_FOUND');
+    }
+
+    // Eliminar registro
+    await db
+      .delete(eventAttendees)
+      .where(eq(eventAttendees.id, registration.id));
+
+    return { success: true };
+  }
+
+  /**
+   * Obtiene todos los asistentes de un evento (solo organizador)
+   */
+  static async getEventAttendees(eventId: number, organizerId: string) {
+    // Verificar ownership
+    const [event] = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!event) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    if (event.organizerId !== organizerId) {
+      throw new Error('FORBIDDEN');
+    }
+
+    // Obtener asistentes con información de usuario
+    const attendees = await db
+      .select({
+        id: eventAttendees.id,
+        eventId: eventAttendees.eventId,
+        userId: eventAttendees.userId,
+        status: eventAttendees.status,
+        ticketTypeId: eventAttendees.ticketTypeId,
+        registeredAt: eventAttendees.registeredAt,
+        statusUpdatedAt: eventAttendees.statusUpdatedAt,
+        checkedInAt: eventAttendees.checkedInAt,
+        notes: eventAttendees.notes,
+        user: {
+          id: users.id,
+          displayName: users.displayName,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          profileImageUrl: users.profileImageUrl,
+        },
+      })
+      .from(eventAttendees)
+      .leftJoin(users, eq(eventAttendees.userId, users.id))
+      .where(eq(eventAttendees.eventId, eventId))
+      .orderBy(eventAttendees.registeredAt);
+
+    return attendees;
+  }
+
+  /**
+   * Aprueba un asistente
+   */
+  static async approveAttendee(eventId: number, attendeeId: number, organizerId: string) {
+    // Verificar ownership
+    const [event] = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!event) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    if (event.organizerId !== organizerId) {
+      throw new Error('FORBIDDEN');
+    }
+
+    // Verificar capacidad
+    const stats = await this.getAttendeeStats(eventId);
+    if (event.capacity && stats.approved >= event.capacity) {
+      throw new Error('EVENT_FULL');
+    }
+
+    // Actualizar estado
+    const [updatedAttendee] = await db
+      .update(eventAttendees)
+      .set({
+        status: 'approved',
+        statusUpdatedAt: new Date(),
+      })
+      .where(eq(eventAttendees.id, attendeeId))
+      .returning();
+
+    return updatedAttendee;
+  }
+
+  /**
+   * Rechaza un asistente
+   */
+  static async rejectAttendee(eventId: number, attendeeId: number, organizerId: string) {
+    // Verificar ownership
+    const [event] = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!event) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    if (event.organizerId !== organizerId) {
+      throw new Error('FORBIDDEN');
+    }
+
+    // Actualizar estado
+    const [updatedAttendee] = await db
+      .update(eventAttendees)
+      .set({
+        status: 'rejected',
+        statusUpdatedAt: new Date(),
+      })
+      .where(eq(eventAttendees.id, attendeeId))
+      .returning();
+
+    return updatedAttendee;
+  }
+
+  /**
+   * Mueve un asistente a la lista de espera
+   */
+  static async moveToWaitlist(eventId: number, attendeeId: number, organizerId: string) {
+    // Verificar ownership
+    const [event] = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!event) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    if (event.organizerId !== organizerId) {
+      throw new Error('FORBIDDEN');
+    }
+
+    if (!event.enableWaitlist) {
+      throw new Error('WAITLIST_NOT_ENABLED');
+    }
+
+    // Actualizar estado
+    const [updatedAttendee] = await db
+      .update(eventAttendees)
+      .set({
+        status: 'waitlisted',
+        statusUpdatedAt: new Date(),
+      })
+      .where(eq(eventAttendees.id, attendeeId))
+      .returning();
+
+    return updatedAttendee;
+  }
+
+  /**
+   * Mueve un asistente de la lista de espera a aprobado
+   */
+  static async moveFromWaitlist(eventId: number, attendeeId: number, organizerId: string) {
+    // Verificar ownership
+    const [event] = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!event) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    if (event.organizerId !== organizerId) {
+      throw new Error('FORBIDDEN');
+    }
+
+    // Verificar capacidad
+    const stats = await this.getAttendeeStats(eventId);
+    if (event.capacity && stats.approved >= event.capacity) {
+      throw new Error('EVENT_FULL');
+    }
+
+    // Actualizar estado
+    const [updatedAttendee] = await db
+      .update(eventAttendees)
+      .set({
+        status: 'approved',
+        statusUpdatedAt: new Date(),
+      })
+      .where(eq(eventAttendees.id, attendeeId))
+      .returning();
+
+    return updatedAttendee;
+  }
+
+  /**
+   * Obtiene el registro de un usuario para un evento
+   */
+  static async getMyRegistration(eventId: number, userId: string) {
+    const [registration] = await db
+      .select()
+      .from(eventAttendees)
+      .where(and(
+        eq(eventAttendees.eventId, eventId),
+        eq(eventAttendees.userId, userId)
+      ));
+
+    return registration || null;
+  }
+
+  /**
+   * Obtiene estadísticas de asistentes para un evento
+   */
+  static async getAttendeeStats(eventId: number) {
+    const results = await db
+      .select({
+        status: eventAttendees.status,
+        count: count(),
+      })
+      .from(eventAttendees)
+      .where(eq(eventAttendees.eventId, eventId))
+      .groupBy(eventAttendees.status);
+
+    const stats = {
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      waitlisted: 0,
+      registered: 0,
+      checked_in: 0,
+    };
+
+    results.forEach((result: any) => {
+      if (result.status in stats) {
+        stats[result.status as keyof typeof stats] = Number(result.count);
+      }
+    });
+
+    // Obtener capacidad del evento
+    const [event] = await db
+      .select({ capacity: events.capacity })
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    const capacity = event?.capacity || 0;
+    const availableSpots = capacity > 0 ? Math.max(0, capacity - stats.approved) : Infinity;
+
+    return {
+      ...stats,
+      capacity,
+      availableSpots,
+    };
   }
 }

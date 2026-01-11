@@ -2,16 +2,14 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { storage } from '../storage/index.js';
 
-const pool = storage.pool;
+// const pool = storage.pool; // DISABLED: pool not available
 
 // ============================================
 // Schemas de validación con Zod
 // ============================================
 
 const addItemSchema = z.object({
-  itemType: z.enum(['service', 'product', 'event', 'booking'], {
-    errorMap: () => ({ message: 'Tipo de item inválido' }),
-  }),
+  itemType: z.enum(['service', 'product', 'event', 'booking']),
   itemId: z.number().int().positive('ID de item debe ser positivo'),
   quantity: z.number().int().positive('La cantidad debe ser al menos 1').default(1),
   price: z.number().nonnegative('El precio no puede ser negativo'),
@@ -123,8 +121,8 @@ async function getCartWithItems(cartId: number): Promise<Cart | null> {
     const items = itemsResult.rows;
 
     // Calcular total
-    const total = items.reduce((sum, item) => sum + parseFloat(item.price) * item.quantity, 0);
-    const itemsCount = items.reduce((sum, item) => sum + item.quantity, 0);
+    const total = items.reduce((sum: number, item: any) => sum + parseFloat(item.price) * item.quantity, 0);
+    const itemsCount = items.reduce((sum: number, item: any) => sum + item.quantity, 0);
 
     return {
       ...cart,

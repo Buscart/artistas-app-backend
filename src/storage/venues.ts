@@ -55,7 +55,7 @@ export class VenueStorage {
     return {
       ...result.venues,
       company
-    };
+    } as any;
   }
 
   async getVenues(filters: { companyId?: number } = {}): Promise<VenueWithCompany[]> {
@@ -107,7 +107,7 @@ export class VenueStorage {
         ...result.venues,
         company
       };
-    });
+    }) as any;
   }
 
   async createVenue(data: typeof venues.$inferInsert): Promise<typeof venues.$inferSelect> {

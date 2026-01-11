@@ -146,7 +146,8 @@ export const createTicketType = async (req: Request, res: Response) => {
     const ticketType = await ticketTypeStorage.createTicketType({
       eventId,
       ...validation.data,
-    });
+      price: String(validation.data.price),
+    } as any);
 
     return res.status(201).json({
       success: true,
@@ -206,7 +207,7 @@ export const createBulkTicketTypes = async (req: Request, res: Response) => {
 
     const ticketTypes = await ticketTypeStorage.createBulkTicketTypes(
       eventId,
-      validation.data
+      validation.data.map((tt: any) => ({ ...tt, price: String(tt.price) }))
     );
 
     return res.status(201).json({
@@ -272,7 +273,10 @@ export const updateTicketType = async (req: Request, res: Response) => {
 
     const updatedTicketType = await ticketTypeStorage.updateTicketType(
       ticketTypeId,
-      validation.data
+      {
+        ...validation.data,
+        ...(validation.data.price !== undefined && { price: String(validation.data.price) }),
+      } as any
     );
 
     return res.json({
@@ -324,7 +328,7 @@ export const deleteTicketType = async (req: Request, res: Response) => {
     }
 
     // Check if any tickets have been sold
-    if (ticketType.soldCount > 0) {
+    if (ticketType.soldCount && ticketType.soldCount > 0) {
       return res.status(400).json({
         success: false,
         error: 'No se puede eliminar un tipo de entrada que ya tiene ventas',

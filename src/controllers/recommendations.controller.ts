@@ -201,7 +201,7 @@ export const getRecommendations = async (req: Request, res: Response) => {
       .$dynamic();
 
     if (type) {
-      query = query.where(eq(recommendations.type, type as string));
+      query = query.where(eq(recommendations.type, type as any));
     }
 
     if (filterUserId) {

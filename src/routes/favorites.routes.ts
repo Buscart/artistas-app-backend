@@ -23,4 +23,10 @@ favoritesRoutes.get(
   asyncHandler(favoritesController.getFavorites)
 );
 
+favoritesRoutes.get(
+  '/ids',
+  authMiddleware,
+  asyncHandler(favoritesController.getFavoriteIds)
+);
+
 export default favoritesRoutes;

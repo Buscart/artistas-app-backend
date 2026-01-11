@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db.js';
-import { and, eq, gte, lte, or, sql, SQL, desc, inArray } from 'drizzle-orm';
+import { and, eq, gte, lte, or, sql, SQL, desc, inArray, ilike } from 'drizzle-orm';
 import { users, artists, events, venues, services, artworks, categories, highlightPhotos } from '../schema.js';
 
 /**
@@ -1021,6 +1021,91 @@ class ExplorerController {
         message: 'Error al obtener datos del explorador',
         error: error.message,
       });
+    }
+  }
+
+  /**
+   * Buscar artistas por nombre
+   * GET /api/v1/explorer/artists/search?q=query&limit=5
+   */
+  static async searchArtists(req: Request, res: Response) {
+    try {
+      const { q, limit = '5' } = req.query;
+
+      if (!q || typeof q !== 'string' || q.trim().length < 2) {
+        return res.json([]);
+      }
+
+      const searchQuery = q.trim().toLowerCase();
+      const limitNum = Math.min(parseInt(limit as string) || 5, 20);
+
+      const results = await db
+        .select({
+          id: artists.id,
+          userId: users.id,
+          name: users.displayName,
+          profession: artists.professionalTitle,
+          category: artists.category,
+          profileImageUrl: users.profileImageUrl,
+        })
+        .from(artists)
+        .leftJoin(users, eq(artists.userId, users.id))
+        .where(
+          or(
+            ilike(users.displayName, `%${searchQuery}%`),
+            ilike(users.firstName, `%${searchQuery}%`),
+            ilike(users.lastName, `%${searchQuery}%`),
+            ilike(artists.professionalTitle, `%${searchQuery}%`),
+            sql`CONCAT(${users.firstName}, ' ', ${users.lastName}) ILIKE ${'%' + searchQuery + '%'}`
+          )
+        )
+        .limit(limitNum);
+
+      res.json(results);
+    } catch (error: any) {
+      console.error('Error searching artists:', error);
+      res.status(500).json({ message: 'Error al buscar artistas', error: error.message });
+    }
+  }
+
+  /**
+   * Buscar eventos por título
+   * GET /api/v1/events/search?q=query&limit=5
+   */
+  static async searchEvents(req: Request, res: Response) {
+    try {
+      const { q, limit = '5' } = req.query;
+
+      if (!q || typeof q !== 'string' || q.trim().length < 2) {
+        return res.json({ success: true, data: [] });
+      }
+
+      const searchQuery = q.trim().toLowerCase();
+      const limitNum = Math.min(parseInt(limit as string) || 5, 20);
+
+      const results = await db
+        .select({
+          id: events.id,
+          title: events.title,
+          startDate: events.startDate,
+          featuredImage: events.featuredImage,
+          city: events.city,
+          eventType: events.eventType,
+        })
+        .from(events)
+        .where(
+          or(
+            ilike(events.title, `%${searchQuery}%`),
+            ilike(events.description, `%${searchQuery}%`)
+          )
+        )
+        .orderBy(desc(events.startDate))
+        .limit(limitNum);
+
+      res.json({ success: true, data: results });
+    } catch (error: any) {
+      console.error('Error searching events:', error);
+      res.status(500).json({ message: 'Error al buscar eventos', error: error.message });
     }
   }
 }

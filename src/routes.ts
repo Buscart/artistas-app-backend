@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage/index.js";
 import { setupAuth, isAuthenticated } from "./replitAuth.js";
+import { artistsController } from "./controllers/artists.controller.js";
 import { 
   users,
   artists,
@@ -183,6 +184,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Artists routes for hiring page
+  app.get('/v1/explorer/artists/map', artistsController.getArtistsForMap);
+  app.get('/v1/explorer/artists', artistsController.getArtistsByFilters);
+  app.get('/v1/explorer/artists/:id', artistsController.getArtistById);
+
   // Users routes (basic CRUD for profile and userType)
   app.get('/api/users/:id', async (req: any, res) => {
     try {
@@ -357,20 +363,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Get artist ID from user ID
-      const artists = await storage.artistStorage.getArtists({ userId: user.id });
-      if (!artists || artists.length === 0) {
+      const artists = await storage.artistStorage.getArtists();
+      const userArtists = artists.filter(artist => artist.artist.userId === user.id);
+      
+      if (!userArtists || userArtists.length === 0) {
         return res.status(400).json({ error: 'User is not registered as an artist' });
       }
       
-      const artist = artists[0];
-      if (!artist || !('id' in artist) || typeof artist.id !== 'number') {
+      const artist = userArtists[0];
+      if (!artist || !artist.artist || typeof artist.artist.id !== 'number') {
         return res.status(400).json({ error: 'Invalid artist data' });
       }
 
       // Create the response
       const response = await storage.hiring.createHiringResponse({
         requestId, // Ya es un número
-        artistId: artist.id, // Aseguramos que es un número
+        artistId: artist.artist.id, // Aseguramos que es un número
         proposal: proposal || '',
         accepted: true, // Default to accepted when artist responds
         message: message || ''

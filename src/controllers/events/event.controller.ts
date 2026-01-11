@@ -363,6 +363,313 @@ class EventController {
       });
     }
   }
+
+  // ========== GESTIÓN DE ASISTENTES (Luma-style) ==========
+
+  /**
+   * Registra un usuario para un evento
+   */
+  static async registerForEvent(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId } = req.params;
+      const { ticketTypeId } = req.body;
+      const userId = req.user._id;
+
+      const attendee = await EventService.registerForEvent(
+        parseInt(eventId),
+        userId,
+        ticketTypeId
+      );
+
+      res.status(201).json({
+        success: true,
+        message: 'Registro exitoso',
+        data: attendee
+      });
+    } catch (error: any) {
+      console.error('Error al registrar para evento:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Evento no encontrado' });
+      }
+      if (error.message === 'EVENT_CANCELLED') {
+        return res.status(400).json({ error: 'El evento ha sido cancelado' });
+      }
+      if (error.message === 'ALREADY_REGISTERED') {
+        return res.status(400).json({ error: 'Ya estás registrado para este evento' });
+      }
+      if (error.message === 'EVENT_FULL') {
+        return res.status(400).json({ error: 'El evento está lleno' });
+      }
+
+      res.status(500).json({ error: 'Error al procesar el registro' });
+    }
+  }
+
+  /**
+   * Cancela el registro de un usuario
+   */
+  static async unregisterFromEvent(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId } = req.params;
+      const userId = req.user._id;
+
+      await EventService.unregisterFromEvent(parseInt(eventId), userId);
+
+      res.status(200).json({
+        success: true,
+        message: 'Registro cancelado exitosamente'
+      });
+    } catch (error: any) {
+      console.error('Error al cancelar registro:', error);
+
+      if (error.message === 'REGISTRATION_NOT_FOUND') {
+        return res.status(404).json({ error: 'Registro no encontrado' });
+      }
+
+      res.status(500).json({ error: 'Error al cancelar el registro' });
+    }
+  }
+
+  /**
+   * Obtiene el registro del usuario actual para un evento
+   */
+  static async getMyRegistration(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId } = req.params;
+      const userId = req.user._id;
+
+      const registration = await EventService.getMyRegistration(parseInt(eventId), userId);
+
+      res.status(200).json({
+        success: true,
+        data: registration
+      });
+    } catch (error) {
+      console.error('Error al obtener registro:', error);
+      res.status(500).json({ error: 'Error al obtener el registro' });
+    }
+  }
+
+  /**
+   * Obtiene todos los asistentes de un evento (solo organizador)
+   */
+  static async getEventAttendees(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId } = req.params;
+      const userId = req.user._id;
+
+      const attendees = await EventService.getEventAttendees(parseInt(eventId), userId);
+
+      res.status(200).json({
+        success: true,
+        data: attendees
+      });
+    } catch (error: any) {
+      console.error('Error al obtener asistentes:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Evento no encontrado' });
+      }
+      if (error.message === 'FORBIDDEN') {
+        return res.status(403).json({ error: 'No tienes permisos para ver los asistentes' });
+      }
+
+      res.status(500).json({ error: 'Error al obtener los asistentes' });
+    }
+  }
+
+  /**
+   * Obtiene estadísticas de asistentes para un evento
+   */
+  static async getAttendeeStats(req: Request, res: Response) {
+    try {
+      const { eventId } = req.params;
+
+      const stats = await EventService.getAttendeeStats(parseInt(eventId));
+
+      res.status(200).json({
+        success: true,
+        data: stats
+      });
+    } catch (error) {
+      console.error('Error al obtener estadísticas:', error);
+      res.status(500).json({ error: 'Error al obtener las estadísticas' });
+    }
+  }
+
+  /**
+   * Aprueba un asistente
+   */
+  static async approveAttendee(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId, attendeeId } = req.params;
+      const userId = req.user._id;
+
+      const attendee = await EventService.approveAttendee(
+        parseInt(eventId),
+        parseInt(attendeeId),
+        userId
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Asistente aprobado',
+        data: attendee
+      });
+    } catch (error: any) {
+      console.error('Error al aprobar asistente:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Evento no encontrado' });
+      }
+      if (error.message === 'FORBIDDEN') {
+        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
+      }
+      if (error.message === 'EVENT_FULL') {
+        return res.status(400).json({ error: 'El evento está lleno' });
+      }
+
+      res.status(500).json({ error: 'Error al aprobar el asistente' });
+    }
+  }
+
+  /**
+   * Rechaza un asistente
+   */
+  static async rejectAttendee(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId, attendeeId } = req.params;
+      const userId = req.user._id;
+
+      const attendee = await EventService.rejectAttendee(
+        parseInt(eventId),
+        parseInt(attendeeId),
+        userId
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Asistente rechazado',
+        data: attendee
+      });
+    } catch (error: any) {
+      console.error('Error al rechazar asistente:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Evento no encontrado' });
+      }
+      if (error.message === 'FORBIDDEN') {
+        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
+      }
+
+      res.status(500).json({ error: 'Error al rechazar el asistente' });
+    }
+  }
+
+  /**
+   * Mueve un asistente a la lista de espera
+   */
+  static async moveToWaitlist(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId, attendeeId } = req.params;
+      const userId = req.user._id;
+
+      const attendee = await EventService.moveToWaitlist(
+        parseInt(eventId),
+        parseInt(attendeeId),
+        userId
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Asistente movido a lista de espera',
+        data: attendee
+      });
+    } catch (error: any) {
+      console.error('Error al mover a lista de espera:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Evento no encontrado' });
+      }
+      if (error.message === 'FORBIDDEN') {
+        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
+      }
+      if (error.message === 'WAITLIST_NOT_ENABLED') {
+        return res.status(400).json({ error: 'La lista de espera no está habilitada' });
+      }
+
+      res.status(500).json({ error: 'Error al mover a lista de espera' });
+    }
+  }
+
+  /**
+   * Mueve un asistente de la lista de espera a aprobado
+   */
+  static async moveFromWaitlist(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId, attendeeId } = req.params;
+      const userId = req.user._id;
+
+      const attendee = await EventService.moveFromWaitlist(
+        parseInt(eventId),
+        parseInt(attendeeId),
+        userId
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Asistente aprobado desde lista de espera',
+        data: attendee
+      });
+    } catch (error: any) {
+      console.error('Error al mover desde lista de espera:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Evento no encontrado' });
+      }
+      if (error.message === 'FORBIDDEN') {
+        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
+      }
+      if (error.message === 'EVENT_FULL') {
+        return res.status(400).json({ error: 'El evento está lleno' });
+      }
+
+      res.status(500).json({ error: 'Error al aprobar desde lista de espera' });
+    }
+  }
 }
 
 export default EventController;

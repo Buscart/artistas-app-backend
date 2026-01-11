@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db.js';
-import { users, artists, companies, reviews } from '../schema.js';
+import { users, artists, companies, reviews, categories, disciplines, roles, specializations } from '../schema.js';
 import { eq, and, or, desc, sql } from 'drizzle-orm';
 
 // Nota: Se removieron tipos externos no definidos (User, Artist) para evitar conflictos de compilación.
@@ -9,7 +9,11 @@ import { eq, and, or, desc, sql } from 'drizzle-orm';
 export const getProfiles = async (req: Request, res: Response) => {
   try {
     const { category, city, minRating, limit = '10', offset = '0' } = req.query;
-    
+
+    // Validar paginación - máximo 100 items por página
+    const limitNum = Math.min(Number(limit) || 10, 100);
+    const offsetNum = Math.max(Number(offset) || 0, 0);
+
     // Construir condiciones base
     // Solo buscar artistas verificados (las empresas se manejan por tabla companies separada)
     const conditions = [
@@ -22,21 +26,24 @@ export const getProfiles = async (req: Request, res: Response) => {
     if (minRating) conditions.push(sql`${users.rating} >= ${Number(minRating)}`);
     if (category) {
       const categoryConditions = [];
-      
+
       if (artists.categoryId) {
         categoryConditions.push(eq(artists.categoryId, Number(category)));
       }
-      
+
       if (artists.subcategories) {
         categoryConditions.push(sql`${artists.subcategories} @> ARRAY[${category}]::text[]`);
       }
-      
+
       if (categoryConditions.length > 0) {
-        conditions.push(or(...categoryConditions));
+        const orCondition = or(...categoryConditions);
+        if (orCondition) {
+          conditions.push(orCondition);
+        }
       }
     }
 
-    // Construir consulta final
+    // Construir consulta final con LEFT JOIN para evitar N+1
     const query = db
       .select({
         id: users.id,
@@ -52,46 +59,73 @@ export const getProfiles = async (req: Request, res: Response) => {
         totalReviews: users.totalReviews,
         isFeatured: users.isFeatured,
         isAvailable: users.isAvailable,
-        createdAt: users.createdAt
+        createdAt: users.createdAt,
+        // Incluir datos de artista directamente
+        artistId: artists.id,
+        artistName: artists.artistName,
+        stageName: artists.stageName,
+        categoryId: artists.categoryId,
+        yearsOfExperience: artists.yearsOfExperience,
+        viewCount: artists.viewCount,
+        disciplineId: artists.disciplineId,
+        roleId: artists.roleId,
+        specializationId: artists.specializationId,
+        tags: artists.tags,
       })
       .from(users)
       .leftJoin(artists, eq(users.id, artists.userId))
       .where(and(...conditions))
       .orderBy(desc(users.isFeatured), desc(users.rating))
-      .limit(Number(limit))
-      .offset(Number(offset));
+      .limit(limitNum)
+      .offset(offsetNum);
 
     const profiles = await query;
-    
-    // Mapear y enriquecer los datos
-    const enrichedProfiles = await Promise.all(
-      profiles.map(async (profile) => {
-        const profileData: any = { ...profile };
-        
-        // Obtener detalles adicionales según el tipo de perfil
-        if (profile.userType === 'artist' && profile.id) {
-          const [artist] = await db
-            .select()
-            .from(artists)
-            .where(eq(artists.userId, profile.id));
-          
-          if (artist) {
-            profileData.artist = artist;
-            
-            // Calcular estadísticas
-            profileData.stats = {
-              totalReviews: Number(profile.totalReviews) || 0,
-              averageRating: Number(profile.rating) || 0,
-              yearsExperience: artist.yearsOfExperience || 0,
-              // Usar viewCount como aproximación de eventos si es necesario
-              totalEvents: artist.viewCount ? Math.floor(Number(artist.viewCount) / 2) : 0
-            };
-          }
-        }
 
-        return profileData;
-      })
-    );
+    // Mapear datos sin queries adicionales
+    const enrichedProfiles = profiles.map((profile) => {
+      const profileData: any = {
+        id: profile.id,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        displayName: profile.displayName,
+        profileImageUrl: profile.profileImageUrl,
+        coverImageUrl: profile.coverImageUrl,
+        userType: profile.userType,
+        bio: profile.bio,
+        city: profile.city,
+        rating: profile.rating,
+        totalReviews: profile.totalReviews,
+        isFeatured: profile.isFeatured,
+        isAvailable: profile.isAvailable,
+        createdAt: profile.createdAt,
+      };
+
+      // Incluir datos de artista si existen
+      if (profile.userType === 'artist' && profile.artistId) {
+        profileData.artist = {
+          id: profile.artistId,
+          artistName: profile.artistName,
+          stageName: profile.stageName,
+          categoryId: profile.categoryId,
+          yearsOfExperience: profile.yearsOfExperience,
+          viewCount: profile.viewCount,
+          disciplineId: profile.disciplineId,
+          roleId: profile.roleId,
+          specializationId: profile.specializationId,
+          tags: profile.tags,
+        };
+
+        // Calcular estadísticas
+        profileData.stats = {
+          totalReviews: Number(profile.totalReviews) || 0,
+          averageRating: Number(profile.rating) || 0,
+          yearsExperience: profile.yearsOfExperience || 0,
+          totalEvents: profile.viewCount ? Math.floor(Number(profile.viewCount) / 2) : 0
+        };
+      }
+
+      return profileData;
+    });
 
     res.json(enrichedProfiles);
   } catch (error) {
@@ -150,61 +184,56 @@ export const getProfileReviews = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { limit = '10', offset = '0' } = req.query;
-    
+
+    // Validar paginación - máximo 100 items por página
+    const limitNum = Math.min(Number(limit) || 10, 100);
+    const offsetNum = Math.max(Number(offset) || 0, 0);
+
     // Verificar si el perfil existe
     const [profile] = await db
       .select({ id: users.id })
       .from(users)
       .where(eq(users.id, id))
       .limit(1);
-    
+
     if (!profile) {
       return res.status(404).json({ message: 'Perfil no encontrado' });
     }
-    
-    const limitNum = Number(limit) || 10;
-    const offsetNum = Number(offset) || 0;
-    
-    // Obtener reseñas del perfil
+
+    // Obtener reseñas del perfil SOLO para artistas del usuario
     const profileReviews = await db
       .select({
         id: reviews.id,
         userId: reviews.userId,
-
         score: reviews.score,
         comment: reviews.reason,
         type: reviews.type,
         createdAt: reviews.createdAt
       })
       .from(reviews)
-      // .where(
-      //   or(
-      //     sql`reviews.artist_id IN (SELECT id FROM artists WHERE user_id = ${id})`,
-      //     sql`reviews.venue_id IN (SELECT id FROM venues WHERE company_id IN (SELECT id FROM companies WHERE user_id = ${id}))`
-      //   )
-      // );
+      .where(
+        sql`${reviews.artistId} IN (SELECT id FROM artists WHERE user_id = ${id})`
+      )
+      .limit(limitNum)
+      .offset(offsetNum);
 
     // Obtener estadísticas de calificaciones
     const [ratingStats] = await db
       .select({
         average: sql<number>`COALESCE(AVG(score), 0) as average`,
         count: sql<number>`COUNT(*) as count`,
-
       })
       .from(reviews)
-      // .where(
-      //   or(
-      //     sql`reviews.artist_id IN (SELECT id FROM artists WHERE user_id = ${id})`,
-      //     sql`reviews.venue_id IN (SELECT id FROM venues WHERE company_id IN (SELECT id FROM companies WHERE user_id = ${id}))`
-      //   )
-      // );
-    
+      .where(
+        sql`${reviews.artistId} IN (SELECT id FROM artists WHERE user_id = ${id})`
+      );
+
     res.json({
       reviews: profileReviews,
       stats: {
         averageRating: ratingStats?.average ? parseFloat(String(ratingStats.average)) : 0,
         totalReviews: ratingStats?.count ? parseInt(String(ratingStats.count)) : 0,
-        ratingDistribution: ratingStats?.distribution || []
+        ratingDistribution: []
       }
     });
   } catch (error) {
@@ -252,35 +281,77 @@ export const getPublicProfile = async (req: Request, res: Response) => {
 
     // Obtener detalles adicionales según el tipo de perfil
     if (profile.userType === 'artist') {
-      const [artist] = await db
-        .select()
+      // Obtener datos del artista con JOINs para categorías
+      const [artistWithCategories] = await db
+        .select({
+          // Datos del artista
+          id: artists.id,
+          stageName: artists.stageName,
+          artistName: artists.artistName,
+          categoryId: artists.categoryId,
+          disciplineId: artists.disciplineId,
+          roleId: artists.roleId,
+          specializationId: artists.specializationId,
+          yearsOfExperience: artists.yearsOfExperience,
+          availability: artists.availability,
+          tags: artists.tags,
+          portfolioUrl: artists.portfolio,
+          baseCity: artists.baseCity,
+          education: artists.education,
+          languages: artists.languages,
+          licenses: artists.licenses,
+          linkedAccounts: artists.linkedAccounts,
+          workExperience: artists.workExperience,
+          hourlyRate: artists.hourlyRate,
+          pricingType: artists.pricingType,
+          priceRange: artists.priceRange,
+          experience: artists.experience,
+          artistType: artists.artistType,
+          travelAvailability: artists.travelAvailability,
+          travelDistance: artists.travelDistance,
+          // Nombres de las categorías
+          categoryName: categories.name,
+          categoryCode: categories.code,
+          disciplineName: disciplines.name,
+          disciplineCode: disciplines.code,
+          roleName: roles.name,
+          roleCode: roles.code,
+          specializationName: specializations.name,
+          specializationCode: specializations.code,
+        })
         .from(artists)
-        .where(eq(artists.userId, id));
+        .leftJoin(categories, eq(artists.categoryId, categories.id))
+        .leftJoin(disciplines, eq(artists.disciplineId, disciplines.id))
+        .leftJoin(roles, eq(artists.roleId, roles.id))
+        .leftJoin(specializations, eq(artists.specializationId, specializations.id))
+        .where(eq(artists.userId, id))
+        .limit(1);
 
-      if (artist) {
+      if (artistWithCategories) {
+        const artist = artistWithCategories;
         // Formatear datos del artista con información de categorías
         profileData.artistData = {
           stageName: artist.stageName,
-          professionalTitle: artist.stageName || artist.artistName, // Usar stageName o artistName como título
+          professionalTitle: artist.stageName || artist.artistName,
           category: artist.categoryId ? {
             id: artist.categoryId,
-            code: artist.categoryId.toString(),
-            name: 'Categoría' // TODO: obtener nombre real de la categoría
+            code: artist.categoryCode || artist.categoryId.toString(),
+            name: artist.categoryName || 'Categoría'
           } : null,
           discipline: artist.disciplineId ? {
             id: artist.disciplineId,
-            code: artist.disciplineId.toString(),
-            name: 'Disciplina' // TODO: obtener nombre real
+            code: artist.disciplineCode || artist.disciplineId.toString(),
+            name: artist.disciplineName || 'Disciplina'
           } : null,
           role: artist.roleId ? {
             id: artist.roleId,
-            code: artist.roleId.toString(),
-            name: 'Rol' // TODO: obtener nombre real
+            code: artist.roleCode || artist.roleId.toString(),
+            name: artist.roleName || 'Rol'
           } : null,
           specialization: artist.specializationId ? {
             id: artist.specializationId,
-            code: artist.specializationId.toString(),
-            name: 'Especialización' // TODO: obtener nombre real
+            code: artist.specializationCode || artist.specializationId.toString(),
+            name: artist.specializationName || 'Especialización'
           } : null,
           yearsOfExperience: artist.yearsOfExperience,
           availability: artist.availability || {},

@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 import { artists, users, categories, disciplines, roles, specializations } from '../schema.js';
-import { eq, and, isNull, sql } from 'drizzle-orm';
+import { eq, and, isNull, sql, gte, lte, isNotNull } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -48,7 +48,15 @@ export class ArtistStorage {
     };
   }
 
-  async getArtists(filters?: { categoryId?: number; userId?: string }): Promise<ArtistWithRelations[]> {
+  async getArtists(params?: {
+    limit?: number;
+    offset?: number;
+    category?: string;
+    city?: string;
+    priceMin?: number;
+    priceMax?: number;
+    availability?: boolean;
+  }): Promise<ArtistWithRelations[]> {
     const userAlias = alias(users, 'user');
     const categoryAlias = alias(categories, 'category');
     const disciplineAlias = alias(disciplines, 'discipline');
@@ -75,12 +83,24 @@ export class ArtistStorage {
     // Aplicar condiciones de filtrado
     const conditions = [];
     
-    if (filters?.categoryId) {
-      conditions.push(eq(artists.categoryId, filters.categoryId));
+    if (params?.category) {
+      conditions.push(eq(categoryAlias.name, params.category));
     }
     
-    if (filters?.userId) {
-      conditions.push(eq(artists.userId, filters.userId));
+    if (params?.city) {
+      conditions.push(eq(artists.baseCity, params.city)); // Usar baseCity
+    }
+    
+    if (params?.priceMin !== undefined) {
+      conditions.push(sql`${artists.hourlyRate} >= ${params.priceMin}`);
+    }
+    
+    if (params?.priceMax !== undefined) {
+      conditions.push(sql`${artists.hourlyRate} <= ${params.priceMax}`);
+    }
+    
+    if (params?.availability !== undefined) {
+      conditions.push(eq(artists.isAvailable, params.availability));
     }
 
     // Aplicar condiciones si existen

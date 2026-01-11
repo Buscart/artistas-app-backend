@@ -23,6 +23,11 @@ export interface QRCodeOptions {
 export class QRCodeService {
   private static readonly SECRET_KEY = process.env.QR_SECRET_KEY || 'your-secret-key-change-in-production';
 
+  // Derivar una clave de 32 bytes para AES-256
+  private static getEncryptionKey(): Buffer {
+    return crypto.createHash('sha256').update(this.SECRET_KEY).digest();
+  }
+
   /**
    * Generar un código único y seguro para el ticket
    */
@@ -52,11 +57,18 @@ export class QRCodeService {
     };
 
     const jsonPayload = JSON.stringify(payload);
-    const cipher = crypto.createCipher('aes-256-cbc', this.SECRET_KEY);
+
+    // Generar IV aleatorio de 16 bytes
+    const iv = crypto.randomBytes(16);
+    const key = this.getEncryptionKey();
+
+    const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
     let encrypted = cipher.update(jsonPayload, 'utf8', 'base64');
     encrypted += cipher.final('base64');
 
-    return encrypted;
+    // Concatenar IV + datos encriptados
+    const ivBase64 = iv.toString('base64');
+    return `${ivBase64}:${encrypted}`;
   }
 
   /**
@@ -106,8 +118,19 @@ export class QRCodeService {
    */
   static validateQRPayload(encryptedPayload: string): TicketData | null {
     try {
-      const decipher = crypto.createDecipher('aes-256-cbc', this.SECRET_KEY);
-      let decrypted = decipher.update(encryptedPayload, 'base64', 'utf8');
+      // Extraer IV y datos encriptados
+      const parts = encryptedPayload.split(':');
+      if (parts.length !== 2) {
+        throw new Error('Formato de payload inválido');
+      }
+
+      const ivBase64 = parts[0];
+      const encrypted = parts[1];
+      const iv = Buffer.from(ivBase64, 'base64');
+      const key = this.getEncryptionKey();
+
+      const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+      let decrypted = decipher.update(encrypted, 'base64', 'utf8');
       decrypted += decipher.final('utf8');
 
       const payload = JSON.parse(decrypted);

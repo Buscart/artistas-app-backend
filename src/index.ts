@@ -295,14 +295,14 @@ app.use((req, res, next) => {
 // Rate limiting
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 300, // máximo 300 solicitudes por IP/ventana
+  max: process.env.NODE_ENV === 'development' ? 10000 : 300, // En desarrollo: 10,000 solicitudes, producción: 300
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 5 minutos
-  max: 30, // rutas sensibles (login/refresh)
+  max: process.env.NODE_ENV === 'development' ? 1000 : 30, // En desarrollo: 1,000 solicitudes, producción: 30
   standardHeaders: true,
   legacyHeaders: false,
 });

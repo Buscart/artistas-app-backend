@@ -113,5 +113,35 @@ export const userController = {
       console.error('getPublicProfile error:', e);
       return res.status(500).json({ message: 'Error al obtener el perfil público' });
     }
+  },
+
+  async searchUsers(req: any, res: Response) {
+    try {
+      const { q, limit = '5' } = req.query;
+
+      if (!q || typeof q !== 'string' || q.trim().length < 2) {
+        return res.json({ users: [] });
+      }
+
+      const searchQuery = q.trim().toLowerCase();
+      const limitNum = Math.min(parseInt(limit as string) || 5, 20); // Max 20 results
+
+      const users = await storage.searchUsers(searchQuery, limitNum);
+
+      // Formatear resultado para el frontend
+      const formattedUsers = users.map(user => ({
+        id: user.id,
+        name: user.displayName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Usuario',
+        username: user.username,
+        avatar: user.profileImageUrl,
+        verified: user.isVerified,
+        category: user.userType === 'artist' ? 'artist' : undefined,
+      }));
+
+      return res.json({ users: formattedUsers });
+    } catch (e) {
+      console.error('searchUsers error:', e);
+      return res.status(500).json({ message: 'Error al buscar usuarios' });
+    }
   }
 };

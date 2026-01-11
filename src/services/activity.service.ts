@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 import { userActivities, notifications, follows, profileViews, achievements, userAchievements, users } from '../schema.js';
-import { eq, desc, and, sql, count, inArray } from 'drizzle-orm';
+import { eq, desc, and, sql, count, inArray, gte } from 'drizzle-orm';
 
 export class ActivityService {
   /**
@@ -25,7 +25,7 @@ export class ActivityService {
           entityId: data.entityId || null,
           metadata: data.metadata || {},
           isRead: false,
-        })
+        } as any)
         .returning();
 
       return activity;
@@ -116,7 +116,7 @@ export class ActivityService {
           priority: data.priority || 'medium',
           metadata: data.metadata || {},
           isRead: false,
-        })
+        } as any)
         .returning();
 
       return notification;

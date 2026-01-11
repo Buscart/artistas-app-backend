@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.middleware.js';
-import { PostService } from '../services/post.service.js';
+import { PostsController } from '../controllers/posts.controller.js';
 import { validateRequest } from '../middleware/validation.middleware.js';
 import { UserWithId } from '../types/user.types.js';
 import multer from 'multer';
@@ -64,309 +64,56 @@ router.post(
   authMiddleware,
   memoryUpload.array('media', 10), // Permitir hasta 10 archivos
   validateRequest(createPostSchema, 'body'),
-  async (req, res, next) => {
-    try {
-      const userId = req.user?.id;
-      if (!userId) {
-        return res.status(401).json({ message: 'No autorizado' });
-      }
-
-      const { content, type, isPublic } = req.body;
-
-      console.log('📝 Creating post:', { userId, content, type, isPublic });
-
-      // Subir archivos a Supabase Storage y construir metadatos
-      const uploadedFiles = getUploadedFiles(req);
-      console.log('📎 Uploaded files count:', uploadedFiles.length);
-
-      const mediaFiles = await uploadMediaFiles(uploadedFiles, 'posts', userId);
-      console.log('✅ Media files uploaded:', mediaFiles.length);
-
-      // Usar el método estático directamente
-      const post = await PostService.createPost(
-        {
-          content,
-          type,
-          isPublic,
-          authorId: userId,
-        },
-        mediaFiles
-      );
-
-      console.log('✅ Post created successfully:', post.id);
-      res.status(201).json(post);
-    } catch (error) {
-      console.error('❌ Error creating post:', error);
-      next(error);
-    }
-  }
+  PostsController.createPost
 );
 
 // Obtener todos los posts
-router.get('/', async (req, res, next) => {
-  try {
-    const { limit = '10', offset = '0', type, followingOnly, category } = req.query;
-    const userId = req.user?.id; // Optional user ID from auth middleware
-
-    // Usar el método estático directamente
-    const result = await PostService.getAllPosts(
-      parseInt(limit as string),
-      parseInt(offset as string),
-      type as 'post' | 'nota' | 'blog' | undefined,
-      userId,
-      followingOnly === 'true',
-      category as string | undefined
-    );
-
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
+router.get('/', PostsController.getPosts);
 
 // Obtener un post por ID
-router.get('/:id', async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id);
-    if (isNaN(postId)) {
-      return res.status(400).json({ message: 'ID de post no válido' });
-    }
-
-    // Usar el método estático directamente
-    const post = await PostService.getPostById(postId);
-    if (!post) {
-      return res.status(404).json({ message: 'Post no encontrado' });
-    }
-
-    res.json(post);
-  } catch (error) {
-    next(error);
-  }
-});
+router.get('/:id', PostsController.getPostById);
 
 // Obtener posts por usuario
-router.get('/user/:userId', async (req, res, next) => {
-  try {
-    const { userId } = req.params;
-    const { limit = '10', offset = '0' } = req.query;
-
-    // Usar el método estático directamente
-    const posts = await PostService.getPostsByUser(
-      userId,
-      parseInt(limit as string),
-      parseInt(offset as string)
-    );
-    
-    res.json(posts);
-  } catch (error) {
-    next(error);
-  }
-});
+router.get('/user/:userId', PostsController.getUserPosts);
 
 // Actualizar un post
 router.put(
   '/:id',
   authMiddleware,
   validateRequest(createPostSchema.partial(), 'body'),
-  async (req, res, next) => {
-    try {
-      const postId = parseInt(req.params.id);
-      const userId = req.user?.id;
-      
-      if (isNaN(postId) || !userId) {
-        return res.status(400).json({ message: 'ID de post no válido' });
-      }
-
-      // Usar el método estático directamente
-      const updatedPost = await PostService.updatePost(
-        postId,
-        userId,
-        req.body
-      );
-      
-      if (!updatedPost) {
-        return res.status(404).json({ message: 'Post no encontrado o no autorizado' });
-      }
-
-      // Usar el método estático directamente
-      res.json(await PostService.getPostById(postId));
-    } catch (error) {
-      next(error);
-    }
-  }
+  PostsController.updatePost
 );
 
 // Eliminar un post
-router.delete('/:id', authMiddleware, async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id);
-    const userId = req.user?.id;
-    
-    if (isNaN(postId) || !userId) {
-      return res.status(400).json({ message: 'ID de post no válido' });
-    }
-
-    // Usar el método estático directamente
-    const result = await PostService.deletePost(postId, userId);
-    if (!result) {
-      return res.status(404).json({ message: 'Post no encontrado o no autorizado' });
-    }
-
-    res.json({ message: 'Post eliminado correctamente' });
-  } catch (error) {
-    next(error);
-  }
-});
+router.delete('/:id', authMiddleware, PostsController.deletePost);
 
 // Añadir medios a un post existente
 router.post(
   '/:id/media',
   authMiddleware,
   memoryUpload.array('media', 10),
-  async (req, res, next) => {
-    try {
-      const postId = parseInt(req.params.id);
-      const userId = req.user?.id;
-
-      if (isNaN(postId) || !userId) {
-        return res.status(400).json({ message: 'ID de post no válido' });
-      }
-
-      const uploadedFiles = getUploadedFiles(req);
-      const mediaFiles = await uploadMediaFiles(uploadedFiles, 'posts');
-
-      // Usar el método estático directamente
-      const result = await PostService.addMediaToPost(postId, userId, mediaFiles);
-      res.status(201).json(result);
-    } catch (error) {
-      next(error);
-    }
-  }
+  PostsController.addMediaToPost
 );
 
 // Dar like a un post
-router.post('/:id/like', authMiddleware, async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id);
-    const userId = req.user?.id;
-
-    if (isNaN(postId) || !userId) {
-      return res.status(400).json({ message: 'ID de post no válido' });
-    }
-
-    await PostService.likePost(postId, userId);
-    res.json({ message: 'Like agregado correctamente' });
-  } catch (error) {
-    next(error);
-  }
-});
+router.post('/:id/like', authMiddleware, PostsController.likePost);
 
 // Quitar like de un post
-router.delete('/:id/like', authMiddleware, async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id);
-    const userId = req.user?.id;
-
-    if (isNaN(postId) || !userId) {
-      return res.status(400).json({ message: 'ID de post no válido' });
-    }
-
-    await PostService.unlikePost(postId, userId);
-    res.json({ message: 'Like eliminado correctamente' });
-  } catch (error) {
-    next(error);
-  }
-});
+router.delete('/:id/like', authMiddleware, PostsController.unlikePost);
 
 // Compartir un post
-router.post('/:id/share', authMiddleware, async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id);
-    const userId = req.user?.id;
-
-    if (isNaN(postId) || !userId) {
-      return res.status(400).json({ message: 'ID de post no válido' });
-    }
-
-    const { content } = req.body;
-    const sharedPost = await PostService.sharePost(postId, userId, content);
-    res.status(201).json(sharedPost);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post('/:id/share', authMiddleware, PostsController.sharePost);
 
 // Obtener comentarios de un post
-router.get('/:id/comments', async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id);
-
-    if (isNaN(postId)) {
-      return res.status(400).json({ message: 'ID de post no válido' });
-    }
-
-    const comments = await PostService.getComments(postId);
-    res.json({ comments });
-  } catch (error) {
-    next(error);
-  }
-});
+router.get('/:id/comments', PostsController.getComments);
 
 // Crear comentario en un post
-router.post('/:id/comments', authMiddleware, async (req, res, next) => {
-  try {
-    const postId = parseInt(req.params.id);
-    const userId = req.user?.id;
-
-    if (isNaN(postId) || !userId) {
-      return res.status(400).json({ message: 'ID de post no válido' });
-    }
-
-    const { content, parentId } = req.body;
-
-    if (!content || content.trim().length === 0) {
-      return res.status(400).json({ message: 'El contenido del comentario es requerido' });
-    }
-
-    const comment = await PostService.createComment(postId, userId, content, parentId);
-    res.status(201).json(comment);
-  } catch (error) {
-    next(error);
-  }
-});
+router.post('/:id/comments', authMiddleware, PostsController.createComment);
 
 // Dar like a un comentario
-router.post('/comments/:commentId/like', authMiddleware, async (req, res, next) => {
-  try {
-    const commentId = parseInt(req.params.commentId);
-    const userId = req.user?.id;
-
-    if (isNaN(commentId) || !userId) {
-      return res.status(400).json({ message: 'ID de comentario no válido' });
-    }
-
-    await PostService.likeComment(commentId, userId);
-    res.json({ message: 'Like agregado al comentario' });
-  } catch (error) {
-    next(error);
-  }
-});
+router.post('/comments/:commentId/like', authMiddleware, PostsController.likeComment);
 
 // Quitar like de un comentario
-router.delete('/comments/:commentId/like', authMiddleware, async (req, res, next) => {
-  try {
-    const commentId = parseInt(req.params.commentId);
-    const userId = req.user?.id;
-
-    if (isNaN(commentId) || !userId) {
-      return res.status(400).json({ message: 'ID de comentario no válido' });
-    }
-
-    await PostService.unlikeComment(commentId, userId);
-    res.json({ message: 'Like eliminado del comentario' });
-  } catch (error) {
-    next(error);
-  }
-});
+router.delete('/comments/:commentId/like', authMiddleware, PostsController.unlikeComment);
 
 export default router;

@@ -27,8 +27,8 @@ export const createEventSchema = z.object({
   ticketUrl: z.string().url().optional(),
   capacity: z.number().int().positive().optional(),
   availableTickets: z.number().int().min(0).optional(),
-  featuredImage: z.string().url().optional(),
-  gallery: z.array(z.string().url()).default([]),
+  featuredImage: z.string().optional(), // Puede ser URL o base64
+  gallery: z.array(z.string()).default([]), // Puede ser URLs o base64
   videoUrl: z.string().url().optional(),
   status: z.enum(['draft', 'published', 'cancelled', 'postponed', 'completed']).default('draft'),
   isFeatured: z.boolean().default(false),
@@ -36,7 +36,8 @@ export const createEventSchema = z.object({
   subcategories: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
   eventType: z.enum(['concert', 'exhibition', 'workshop', 'festival', 'conference', 'theater', 'dance', 'other']).default('other'),
-  organizerId: z.string()
+  organizerId: z.string().optional(), // No debe venir del frontend, se setea desde req.user
+  companyId: z.string().optional() // ID de la empresa organizadora (opcional)
 });
 
 // Schema de validación para la actualización de eventos (todos los campos son opcionales)

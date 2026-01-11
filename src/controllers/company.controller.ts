@@ -1,7 +1,5 @@
 import { Response } from 'express';
 import { storage } from '../storage/index.js';
-import { eq, and } from 'drizzle-orm';
-import { companies, venues } from '../schema.js';
 
 export const companyController = {
   // Obtener todas las empresas del usuario autenticado
@@ -9,7 +7,7 @@ export const companyController = {
     // Validar que el usuario esté autenticado
     if (!req.user?.id) {
       console.error('❌ Intento de acceso no autorizado a getMyCompanies');
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
         message: 'No autorizado',
         error: 'USER_NOT_AUTHENTICATED'
@@ -20,21 +18,17 @@ export const companyController = {
 
     try {
       console.log(`🔍 Buscando empresas para el usuario: ${userId}`);
-      
+
       // Verificar que el userId tenga un formato válido
       if (typeof userId !== 'string' || userId.trim() === '') {
         throw new Error('ID de usuario no válido');
       }
 
-      // Obtener las empresas del usuario
-      const userCompanies = await storage.db
-        .select()
-        .from(companies)
-        .where(eq(companies.userId, userId))
-        .orderBy(companies.createdAt);
+      // Obtener las empresas del usuario usando CompanyStorage
+      const userCompanies = await storage.getCompaniesByUserId(userId);
 
       console.log(`✅ Se encontraron ${userCompanies.length} empresas para el usuario ${userId}`);
-      
+
       return res.status(200).json({
         success: true,
         data: userCompanies,
@@ -58,7 +52,7 @@ export const companyController = {
             error: 'DATABASE_TABLE_NOT_FOUND'
           });
         }
-        
+
         if (error.message.includes('connection')) {
           return res.status(503).json({
             success: false,
@@ -83,29 +77,24 @@ export const companyController = {
       const { id } = req.params;
       const userId = req.user?.id;
 
-      const company = await storage.db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, parseInt(id)))
-        .limit(1);
+      const result = await storage.getCompany(parseInt(id));
 
-      if (!company || company.length === 0) {
+      if (!result) {
         return res.status(404).json({ message: 'Empresa no encontrada' });
       }
 
       // Verificar que el usuario sea el dueño de la empresa
-      if (userId && company[0].userId !== userId) {
+      if (userId && result.company.userId !== userId) {
         // Si no es el dueño, solo devolver información pública
-        const publicCompany = {
-          ...company[0],
-          taxId: undefined,
-          email: undefined,
-          phone: undefined,
-        };
-        return res.json(publicCompany);
+        const publicResult = await storage.getPublicCompanyProfile(parseInt(id));
+        if (!publicResult) {
+          return res.status(404).json({ message: 'Empresa no encontrada' });
+        }
+        return res.json(publicResult.company);
       }
 
-      return res.json(company[0]);
+      // Retornar la empresa directamente, no el objeto anidado
+      return res.json(result.company);
     } catch (error) {
       console.error('Error al obtener empresa:', error);
       return res.status(500).json({ message: 'Error al obtener empresa' });
@@ -155,63 +144,87 @@ export const companyController = {
         gallery,
         videoTourUrl,
         isPrimary,
+        // Nuevos campos unificados
+        portfolio,
+        bio,
+        history,
+        mission,
+        vision,
+        team,
+        teamSize,
+        foundedYear,
+        certifications,
+        awards,
+        licenses,
+        partnerships,
+        linkedAccounts,
+        languages,
+        education,
+        workExperience,
       } = req.body;
 
       if (!companyName) {
         return res.status(400).json({ message: 'El nombre de la empresa es requerido' });
       }
 
-      // Si es la primera empresa o se marca como principal, actualizar otras empresas
+      // Si es la primera empresa o se marca como principal, actualizar otras empresas usando CompanyStorage
       if (isPrimary) {
-        await storage.db
-          .update(companies)
-          .set({ isPrimary: false })
-          .where(eq(companies.userId, userId));
+        await storage.setPrimaryCompany(userId, 0); // This will unset all primary flags
       }
 
-      const newCompany = await storage.db
-        .insert(companies)
-        .values({
-          userId,
-          companyName,
-          legalName,
-          taxId,
-          description,
-          shortDescription,
-          companyType,
-          categories: categories || [],
-          subcategories: subcategories || [],
-          tags: tags || [],
-          contactPerson,
-          phone,
-          email,
-          website,
-          socialMedia: socialMedia || {},
-          address,
-          city,
-          state,
-          country,
-          postalCode,
-          coordinates,
-          services: services || [],
-          amenities: amenities || [],
-          capacity,
-          rooms: rooms || [],
-          openingHours: openingHours || {},
-          is24h: is24h || false,
-          priceRange,
-          depositRequired: depositRequired || false,
-          depositAmount,
-          logoUrl,
-          coverPhotoUrl,
-          gallery: gallery || [],
-          videoTourUrl,
-          isPrimary: isPrimary || false,
-          isActive: true,
-          isVerified: false,
-          isProfileComplete: false,
-        })
-        .returning();
+      const newCompany = await storage.createCompany({
+        userId,
+        companyName,
+        legalName,
+        taxId,
+        description,
+        shortDescription,
+        companyType,
+        categories,
+        subcategories,
+        tags,
+        contactPerson,
+        phone,
+        email,
+        website,
+        socialMedia,
+        address,
+        city,
+        state,
+        country,
+        postalCode,
+        coordinates,
+        services,
+        amenities,
+        capacity,
+        rooms,
+        openingHours,
+        is24h,
+        priceRange,
+        depositRequired,
+        depositAmount,
+        logoUrl,
+        coverPhotoUrl,
+        gallery,
+        videoTourUrl,
+        isPrimary,
+        portfolio,
+        bio,
+        history,
+        mission,
+        vision,
+        team,
+        teamSize,
+        foundedYear,
+        certifications,
+        awards,
+        licenses,
+        partnerships,
+        linkedAccounts,
+        languages,
+        education,
+        workExperience,
+      });
 
       // Crear automáticamente un venue para que la empresa aparezca en el explorador
       const multimedia = {
@@ -230,29 +243,27 @@ export const companyController = {
 
       const dailyRate = priceRange?.min || depositAmount || 0;
 
-      await storage.db
-        .insert(venues)
-        .values({
-          companyId: newCompany[0].id,
-          name: companyName,
-          description: description || shortDescription,
-          venueType: companyType,
-          services: tags || [],
-          address,
-          city,
-          openingHours: openingHours || {},
-          contact,
-          multimedia,
-          coordinates,
-          dailyRate,
-          capacity,
-          isAvailable: true,
-          rating: 0,
-          totalReviews: 0,
-        });
+      await storage.createVenue({
+        companyId: newCompany.id,
+        name: companyName,
+        description: description || shortDescription,
+        venueType: companyType,
+        services: tags || [],
+        address,
+        city,
+        openingHours: openingHours || {},
+        contact,
+        multimedia,
+        coordinates,
+        dailyRate,
+        capacity,
+        isAvailable: true,
+        rating: 0,
+        totalReviews: 0,
+      } as any);
 
       console.log(`✅ Empresa y venue creados exitosamente para ${companyName}`);
-      return res.status(201).json(newCompany[0]);
+      return res.status(201).json(newCompany);
     } catch (error) {
       console.error('Error al crear empresa:', error);
       return res.status(500).json({ message: 'Error al crear empresa' });
@@ -269,18 +280,9 @@ export const companyController = {
         return res.status(401).json({ message: 'No autenticado' });
       }
 
-      // Verificar que la empresa existe y pertenece al usuario
-      const existingCompany = await storage.db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, parseInt(id)))
-        .limit(1);
-
-      if (!existingCompany || existingCompany.length === 0) {
-        return res.status(404).json({ message: 'Empresa no encontrada' });
-      }
-
-      if (existingCompany[0].userId !== userId) {
+      // Verificar que la empresa existe y pertenece al usuario usando CompanyStorage
+      const isOwner = await storage.isCompanyOwner(parseInt(id), userId);
+      if (!isOwner) {
         return res.status(403).json({ message: 'No tienes permiso para actualizar esta empresa' });
       }
 
@@ -290,23 +292,10 @@ export const companyController = {
 
       // Si se marca como principal, desmarcar otras empresas
       if (updateData.isPrimary) {
-        await storage.db
-          .update(companies)
-          .set({ isPrimary: false })
-          .where(and(
-            eq(companies.userId, userId),
-            eq(companies.id, parseInt(id))
-          ));
+        await storage.setPrimaryCompany(userId, parseInt(id));
       }
 
-      const updatedCompany = await storage.db
-        .update(companies)
-        .set({
-          ...updateData,
-          updatedAt: new Date(),
-        })
-        .where(eq(companies.id, parseInt(id)))
-        .returning();
+      const updatedCompany = await storage.updateCompany(parseInt(id), updateData);
 
       // Actualizar también el venue asociado si hay cambios relevantes
       const venueUpdateData: any = {};
@@ -346,16 +335,16 @@ export const companyController = {
 
       // Solo actualizar el venue si hay cambios
       if (Object.keys(venueUpdateData).length > 0) {
-        venueUpdateData.updatedAt = new Date();
-        await storage.db
-          .update(venues)
-          .set(venueUpdateData)
-          .where(eq(venues.companyId, parseInt(id)));
-
-        console.log(`✅ Venue actualizado para la empresa ${id}`);
+        // Find the venue associated with this company
+        const companyResult = await storage.getCompany(parseInt(id));
+        if (companyResult && companyResult.venues && companyResult.venues.length > 0) {
+          const venue = companyResult.venues[0];
+          await storage.updateVenue(venue.id, venueUpdateData);
+          console.log(`✅ Venue actualizado para la empresa ${id}`);
+        }
       }
 
-      return res.json(updatedCompany[0]);
+      return res.json(updatedCompany);
     } catch (error) {
       console.error('Error al actualizar empresa:', error);
       return res.status(500).json({ message: 'Error al actualizar empresa' });
@@ -372,24 +361,13 @@ export const companyController = {
         return res.status(401).json({ message: 'No autenticado' });
       }
 
-      // Verificar que la empresa existe y pertenece al usuario
-      const existingCompany = await storage.db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, parseInt(id)))
-        .limit(1);
-
-      if (!existingCompany || existingCompany.length === 0) {
-        return res.status(404).json({ message: 'Empresa no encontrada' });
-      }
-
-      if (existingCompany[0].userId !== userId) {
+      // Verificar que la empresa existe y pertenece al usuario usando CompanyStorage
+      const isOwner = await storage.isCompanyOwner(parseInt(id), userId);
+      if (!isOwner) {
         return res.status(403).json({ message: 'No tienes permiso para eliminar esta empresa' });
       }
 
-      await storage.db
-        .delete(companies)
-        .where(eq(companies.id, parseInt(id)));
+      await storage.deleteCompany(parseInt(id));
 
       return res.json({ message: 'Empresa eliminada exitosamente' });
     } catch (error) {
@@ -408,38 +386,241 @@ export const companyController = {
         return res.status(401).json({ message: 'No autenticado' });
       }
 
-      // Verificar que la empresa existe y pertenece al usuario
-      const existingCompany = await storage.db
-        .select()
-        .from(companies)
-        .where(eq(companies.id, parseInt(id)))
-        .limit(1);
-
-      if (!existingCompany || existingCompany.length === 0) {
-        return res.status(404).json({ message: 'Empresa no encontrada' });
-      }
-
-      if (existingCompany[0].userId !== userId) {
+      // Verificar que la empresa existe y pertenece al usuario usando CompanyStorage
+      const isOwner = await storage.isCompanyOwner(parseInt(id), userId);
+      if (!isOwner) {
         return res.status(403).json({ message: 'No tienes permiso para modificar esta empresa' });
       }
 
-      // Desmarcar todas las empresas del usuario como principales
-      await storage.db
-        .update(companies)
-        .set({ isPrimary: false })
-        .where(eq(companies.userId, userId));
+      // Establecer como empresa principal usando CompanyStorage
+      const updatedCompany = await storage.setPrimaryCompany(userId, parseInt(id));
 
-      // Marcar la empresa seleccionada como principal
-      const updatedCompany = await storage.db
-        .update(companies)
-        .set({ isPrimary: true })
-        .where(eq(companies.id, parseInt(id)))
-        .returning();
-
-      return res.json(updatedCompany[0]);
+      return res.json(updatedCompany);
     } catch (error) {
       console.error('Error al establecer empresa principal:', error);
       return res.status(500).json({ message: 'Error al establecer empresa principal' });
+    }
+  },
+
+  // Obtener perfil público de la empresa (sin datos sensibles)
+  async getPublicProfile(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const publicProfile = await storage.getPublicCompanyProfile(parseInt(id));
+
+      if (!publicProfile) {
+        return res.status(404).json({ message: 'Empresa no encontrada' });
+      }
+
+      // Retornar solo los datos de la empresa, no el objeto anidado
+      return res.json(publicProfile.company);
+    } catch (error) {
+      console.error('Error al obtener perfil público:', error);
+      return res.status(500).json({ message: 'Error al obtener perfil público' });
+    }
+  },
+
+  // Obtener sección "Acerca de" de la empresa
+  async getAbout(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await storage.getCompany(parseInt(id));
+
+      if (!result) {
+        return res.status(404).json({ message: 'Empresa no encontrada' });
+      }
+
+      const aboutData = {
+        bio: result.company.bio,
+        description: result.company.description,
+        shortDescription: result.company.shortDescription,
+        history: result.company.history,
+        mission: result.company.mission,
+        vision: result.company.vision,
+        foundedYear: result.company.foundedYear,
+        teamSize: result.company.teamSize,
+      };
+
+      return res.json(aboutData);
+    } catch (error) {
+      console.error('Error al obtener información "Acerca de":', error);
+      return res.status(500).json({ message: 'Error al obtener información' });
+    }
+  },
+
+  // Actualizar sección "Acerca de" de la empresa
+  async updateAbout(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'No autenticado' });
+      }
+
+      const isOwner = await storage.isCompanyOwner(parseInt(id), userId);
+      if (!isOwner) {
+        return res.status(403).json({ message: 'No tienes permiso para actualizar esta empresa' });
+      }
+
+      const { bio, description, shortDescription, history, mission, vision, foundedYear, teamSize } = req.body;
+
+      const updatedCompany = await storage.updateCompany(parseInt(id), {
+        bio,
+        description,
+        shortDescription,
+        history,
+        mission,
+        vision,
+        foundedYear,
+        teamSize,
+      });
+
+      return res.json(updatedCompany);
+    } catch (error) {
+      console.error('Error al actualizar "Acerca de":', error);
+      return res.status(500).json({ message: 'Error al actualizar información' });
+    }
+  },
+
+  // Obtener portafolio de la empresa
+  async getPortfolio(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await storage.getCompany(parseInt(id));
+
+      if (!result) {
+        return res.status(404).json({ message: 'Empresa no encontrada' });
+      }
+
+      const portfolioData = {
+        portfolio: result.company.portfolio,
+        gallery: result.company.gallery,
+        videoTourUrl: result.company.videoTourUrl,
+        workExperience: result.company.workExperience,
+        awards: result.company.awards,
+        certifications: result.company.certifications,
+      };
+
+      return res.json(portfolioData);
+    } catch (error) {
+      console.error('Error al obtener portafolio:', error);
+      return res.status(500).json({ message: 'Error al obtener portafolio' });
+    }
+  },
+
+  // Actualizar portafolio de la empresa
+  async updatePortfolio(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'No autenticado' });
+      }
+
+      const isOwner = await storage.isCompanyOwner(parseInt(id), userId);
+      if (!isOwner) {
+        return res.status(403).json({ message: 'No tienes permiso para actualizar esta empresa' });
+      }
+
+      const { portfolio, gallery, videoTourUrl, workExperience, awards, certifications } = req.body;
+
+      const updatedCompany = await storage.updateCompany(parseInt(id), {
+        portfolio,
+        gallery,
+        videoTourUrl,
+        workExperience,
+        awards,
+        certifications,
+      });
+
+      return res.json(updatedCompany);
+    } catch (error) {
+      console.error('Error al actualizar portafolio:', error);
+      return res.status(500).json({ message: 'Error al actualizar portafolio' });
+    }
+  },
+
+  // Obtener equipo de la empresa
+  async getTeam(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const result = await storage.getCompany(parseInt(id));
+
+      if (!result) {
+        return res.status(404).json({ message: 'Empresa no encontrada' });
+      }
+
+      const teamData = {
+        team: result.company.team,
+        teamSize: result.company.teamSize,
+      };
+
+      return res.json(teamData);
+    } catch (error) {
+      console.error('Error al obtener equipo:', error);
+      return res.status(500).json({ message: 'Error al obtener equipo' });
+    }
+  },
+
+  // Actualizar equipo de la empresa
+  async updateTeam(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const userId = req.user?.id;
+
+      if (!userId) {
+        return res.status(401).json({ message: 'No autenticado' });
+      }
+
+      const isOwner = await storage.isCompanyOwner(parseInt(id), userId);
+      if (!isOwner) {
+        return res.status(403).json({ message: 'No tienes permiso para actualizar esta empresa' });
+      }
+
+      const { team, teamSize } = req.body;
+
+      const updatedCompany = await storage.updateCompany(parseInt(id), {
+        team,
+        teamSize,
+      });
+
+      return res.json(updatedCompany);
+    } catch (error) {
+      console.error('Error al actualizar equipo:', error);
+      return res.status(500).json({ message: 'Error al actualizar equipo' });
+    }
+  },
+
+  // Incrementar contador de vistas
+  async incrementViewCount(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      await storage.companyStorage.incrementViewCount(parseInt(id));
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Error al incrementar vistas:', error);
+      return res.status(500).json({ message: 'Error al incrementar vistas' });
+    }
+  },
+
+  // Guardar empresa en favoritos
+  async saveToFavorites(req: any, res: Response) {
+    try {
+      const { id } = req.params;
+      const { save } = req.body; // true para guardar, false para quitar
+
+      if (save) {
+        await storage.companyStorage.incrementSaveCount(parseInt(id));
+      } else {
+        await storage.companyStorage.decrementSaveCount(parseInt(id));
+      }
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Error al guardar en favoritos:', error);
+      return res.status(500).json({ message: 'Error al guardar en favoritos' });
     }
   },
 };

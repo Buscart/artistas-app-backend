@@ -357,7 +357,7 @@ export class UserContractsStorage {
       serviceDate: quotation.preferredDate,
       metadata: {
         quotationId: quotation.id,
-        ...quotation.metadata,
+        ...(quotation.metadata as any || {}),
       },
     });
 

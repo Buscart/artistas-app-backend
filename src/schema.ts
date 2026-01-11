@@ -1,9 +1,28 @@
 import { pgTable, serial, varchar, text, timestamp, boolean, integer, numeric, jsonb, date, uniqueIndex, AnyPgColumn } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
-// Importar y re-exportar tablas de posts
-export { posts, postMedia, postTypeEnum, postRelations, postMediaRelations } from './models/post.model.js';
-export type { Post, NewPost, PostMedia, NewPostMedia } from './models/post.model.js';
+// Importar y re-exportar tablas de posts y comentarios
+export {
+  posts,
+  postMedia,
+  postTypeEnum,
+  postRelations,
+  postMediaRelations,
+  comments,
+  commentLikes,
+  commentPollVotes,
+  commentRelations
+} from './models/post.model.js';
+export type {
+  Post,
+  NewPost,
+  PostMedia,
+  NewPostMedia,
+  Comment,
+  NewComment,
+  CommentLike,
+  CommentPollVote
+} from './models/post.model.js';
 
 export const users = pgTable('users', {
   id: varchar('id').primaryKey(),
@@ -283,7 +302,13 @@ export const events = pgTable('events', {
   ticketUrl: varchar('ticket_url'),
   capacity: integer('capacity'),
   availableTickets: integer('available_tickets'),
-  
+
+  // Gestión de asistentes (Luma-style)
+  requiresApproval: boolean('requires_approval').default(false),
+  enableWaitlist: boolean('enable_waitlist').default(false),
+  waitlistCapacity: integer('waitlist_capacity'),
+  registrationDeadline: timestamp('registration_deadline'),
+
   // Multimedia
   featuredImage: varchar('featured_image'),
   gallery: jsonb('gallery').default(sql`'[]'`),
@@ -379,18 +404,47 @@ export const companies = pgTable('companies', {
   coverPhotoUrl: varchar('cover_photo_url'),
   gallery: jsonb('gallery').default(sql`'[]'`), // Array de URLs de imágenes
   videoTourUrl: varchar('video_tour_url'),
-  
+
+  // Portfolio y experiencia profesional (unificado con artists)
+  portfolio: jsonb('portfolio').default(sql`'[]'::jsonb`), // Portfolio items: images, videos, case studies
+  bio: text('bio'), // Detailed company biography (longer than description)
+  history: jsonb('history').default(sql`'[]'::jsonb`), // Company timeline and milestones
+  mission: text('mission'), // Company mission statement
+  vision: text('vision'), // Company vision statement
+
+  // Team and organization
+  team: jsonb('team').default(sql`'[]'::jsonb`), // Team members with roles and bios
+  teamSize: integer('teamsize'), // Number of team members
+  foundedYear: integer('foundedyear'), // Year company was founded
+
+  // Professional credentials
+  certifications: jsonb('certifications').default(sql`'[]'::jsonb`), // Company certifications
+  awards: jsonb('awards').default(sql`'[]'::jsonb`), // Awards and recognition
+  licenses: jsonb('licenses').default(sql`'[]'::jsonb`), // Business licenses
+  partnerships: jsonb('partnerships').default(sql`'[]'::jsonb`), // Partner organizations
+
+  // Additional contact and social
+  linkedAccounts: jsonb('linkedaccounts').default(sql`'{}'::jsonb`), // LinkedIn, etc.
+  languages: jsonb('languages').default(sql`'[]'::jsonb`), // Languages supported
+
+  // Education and training (for companies offering educational services)
+  education: jsonb('education').default(sql`'[]'::jsonb`), // Training programs offered
+
+  // Work experience (for service companies showcasing past projects)
+  workExperience: jsonb('workexperience').default(sql`'[]'::jsonb`), // Past projects/clients
+
   // Estadísticas
   rating: numeric('rating', { precision: 3, scale: 2 }).default(sql`0`),
   totalReviews: integer('total_reviews').default(sql`0`),
   viewCount: integer('view_count').default(sql`0`),
   saveCount: integer('save_count').default(sql`0`), // Veces guardado en favoritos
-  
+  fanCount: integer('fancount').default(sql`0`), // Unified with artists - number of fans/followers
+
   // Verificación y estado
   isVerified: boolean('is_verified').default(false),
   isProfileComplete: boolean('is_profile_complete').default(false),
   isActive: boolean('is_active').default(true),
-  
+
   // Metadata
   metadata: jsonb('metadata').default(sql`'{}'`),
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
@@ -980,23 +1034,28 @@ export const purchaseItems = pgTable('purchase_items', {
 });
 
 // Tabla de asistentes (attendees) - une usuario, evento y boleto
+// Soporta tanto eventos con tickets pagos como eventos gratuitos estilo Luma
 export const eventAttendees = pgTable('event_attendees', {
   id: serial('id').primaryKey(),
   eventId: integer('event_id').notNull().references(() => events.id, { onDelete: 'cascade' }),
   userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
 
-  // Información del boleto
-  purchaseId: integer('purchase_id').notNull().references(() => purchases.id, { onDelete: 'cascade' }),
-  ticketTypeId: integer('ticket_type_id').notNull().references(() => ticketTypes.id, { onDelete: 'cascade' }),
+  // Información del boleto (opcional para eventos gratuitos)
+  purchaseId: integer('purchase_id').references(() => purchases.id, { onDelete: 'cascade' }),
+  ticketTypeId: integer('ticket_type_id').references(() => ticketTypes.id, { onDelete: 'cascade' }),
   seatId: integer('seat_id').references(() => seats.id, { onDelete: 'set null' }),
 
-  // Estado del asistente
+  // Estado del asistente (sistema Luma + tradicional)
   status: varchar('status', {
-    enum: ['registered', 'checked_in', 'no_show', 'cancelled']
-  }).default('registered'),
+    enum: ['pending', 'approved', 'rejected', 'waitlisted', 'registered', 'checked_in', 'no_show', 'cancelled']
+  }).default('pending'),
 
   // Respuestas a campos personalizados
   customFieldResponses: jsonb('custom_field_responses').default(sql`'{}'`),
+
+  // Gestión de aprobación (Luma-style)
+  statusUpdatedAt: timestamp('status_updated_at'),
+  notes: text('notes'), // Notas del organizador sobre el asistente
 
   // Check-in
   checkedInAt: timestamp('checked_in_at'),
@@ -1006,10 +1065,7 @@ export const eventAttendees = pgTable('event_attendees', {
   registeredAt: timestamp('registered_at').default(sql`CURRENT_TIMESTAMP`),
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
-}, (table) => ({
-  // Índice único para prevenir registros duplicados
-  eventUserIdx: uniqueIndex('event_user_purchase_idx').on(table.eventId, table.userId, table.purchaseId),
-}));
+});
 
 // Tabla de campañas de empresas (marketing, colaboración, UGC)
 export const campaigns = pgTable('campaigns', {
@@ -1111,7 +1167,8 @@ export const campaignApplications = pgTable('campaign_applications', {
 // Tabla de reservas/bookings para espacios de empresas
 export const bookings = pgTable('bookings', {
   id: serial('id').primaryKey(),
-  companyId: integer('company_id').notNull().references(() => companies.id, { onDelete: 'cascade' }),
+  companyId: integer('company_id').references(() => companies.id, { onDelete: 'cascade' }),
+  artistId: integer('artist_id').references(() => artists.id, { onDelete: 'cascade' }),
   venueId: integer('venue_id').references(() => venues.id, { onDelete: 'set null' }),
   userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
 
@@ -1174,6 +1231,15 @@ export const bookings = pgTable('bookings', {
 });
 
 export const favorites = pgTable('favorites', {
+  id: serial('id').primaryKey(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  entityId: integer('entity_id').notNull(),
+  entityType: varchar('entity_type').notNull(),
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+// Tabla de items que no le gustan al usuario (para mejorar recomendaciones)
+export const dislikedItems = pgTable('disliked_items', {
   id: serial('id').primaryKey(),
   userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   entityId: integer('entity_id').notNull(),

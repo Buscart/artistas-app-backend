@@ -36,6 +36,7 @@ export interface CreateEventInput {
   tags?: string[];
   eventType: EventType;
   organizerId: string;
+  companyId?: string; // ID de la empresa organizadora (opcional)
 }
 
 export interface UpdateEventInput extends Partial<Omit<CreateEventInput, 'organizerId'>> {

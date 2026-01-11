@@ -211,3 +211,40 @@ export const authMiddleware = async (
     });
   }
 };
+
+// Middleware para verificar que el usuario solo pueda modificar su propio perfil
+export const checkProfileOwnership = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params; // ID del perfil a modificar
+    const userId = req.user?.id; // ID del usuario autenticado
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: 'Usuario no autenticado',
+        details: 'Debe estar autenticado para realizar esta acción'
+      });
+    }
+
+    if (id !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'No autorizado',
+        details: 'No puede modificar un perfil que no le pertenece'
+      });
+    }
+
+    next();
+  } catch (error: any) {
+    console.error('❌ Error en checkProfileOwnership:', error.message);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al verificar permisos',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};

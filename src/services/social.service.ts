@@ -28,10 +28,10 @@ export class SocialService {
         LIMIT ${limit}
       `);
 
-      console.log('✅ Found suggested users:', result.rows.length);
-      console.log('📋 Users:', result.rows);
+      console.log('✅ Found suggested users:', (result as any).rows.length);
+      console.log('📋 Users:', (result as any).rows);
 
-      return result.rows || [];
+      return (result as any).rows || [];
     } catch (error) {
       console.error('❌ Error getting suggested users:', error);
       return [];
@@ -59,7 +59,7 @@ export class SocialService {
         LIMIT ${limit}
       `);
 
-      const rows = result.rows || [];
+      const rows = (result as any).rows || [];
 
       // Si no hay hashtags suficientes, agregar tendencias por defecto
       if (rows.length < limit) {
