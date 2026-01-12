@@ -1,6 +1,6 @@
 import type { Database } from '../types/db.js';
 import { messages, users } from '../schema.js';
-import { eq, and } from 'drizzle-orm';
+import { and, asc, eq, or } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
 export class MessageStorage {
@@ -148,10 +148,77 @@ export class MessageStorage {
     sender: typeof users.$inferSelect;
     receiver: typeof users.$inferSelect;
   })[]> {
-    return this.getMessages({
-      senderId: userId,
-      receiverId: userId
-    });
+    const senderAlias = alias(users, 'sender');
+    const receiverAlias = alias(users, 'receiver');
+
+    const results = await this.db
+      .select({
+        id: messages.id,
+        content: messages.content,
+        senderId: messages.senderId,
+        receiverId: messages.receiverId,
+        isRead: messages.isRead,
+        createdAt: messages.createdAt,
+        sender: senderAlias,
+        receiver: receiverAlias
+      })
+      .from(messages)
+      .leftJoin(senderAlias, eq(messages.senderId, senderAlias.id))
+      .leftJoin(receiverAlias, eq(messages.receiverId, receiverAlias.id))
+      .where(or(eq(messages.senderId, userId), eq(messages.receiverId, userId)))
+      .orderBy(asc(messages.createdAt));
+
+    return results.map((result: { id: number; content: string; senderId: string; receiverId: string; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
+      ...result,
+      sender: result.sender || {
+        id: '',
+        email: '',
+        firstName: null,
+        lastName: null,
+        profileImageUrl: null,
+        coverImageUrl: null,
+        userType: 'general' as const,
+        bio: null,
+        city: null,
+        address: null,
+        phone: null,
+        website: null,
+        socialMedia: null,
+        isVerified: false,
+        isActive: true,
+        lastLogin: null,
+        emailVerified: false,
+        phoneVerified: false,
+        preferences: null,
+        metadata: null,
+        createdAt: null,
+        updatedAt: null
+      } as any,
+      receiver: result.receiver || {
+        id: '',
+        email: '',
+        firstName: null,
+        lastName: null,
+        profileImageUrl: null,
+        coverImageUrl: null,
+        userType: 'general' as const,
+        bio: null,
+        city: null,
+        address: null,
+        phone: null,
+        website: null,
+        socialMedia: null,
+        isVerified: false,
+        isActive: true,
+        lastLogin: null,
+        emailVerified: false,
+        phoneVerified: false,
+        preferences: null,
+        metadata: null,
+        createdAt: null,
+        updatedAt: null
+      } as any
+    }));
   }
 
   async getConversation(userId1: string, userId2: string): Promise<(typeof messages.$inferSelect & {
@@ -176,11 +243,12 @@ export class MessageStorage {
       .leftJoin(senderAlias, eq(messages.senderId, senderAlias.id))
       .leftJoin(receiverAlias, eq(messages.receiverId, receiverAlias.id))
       .where(
-        and(
-          eq(messages.senderId, userId1),
-          eq(messages.receiverId, userId2)
+        or(
+          and(eq(messages.senderId, userId1), eq(messages.receiverId, userId2)),
+          and(eq(messages.senderId, userId2), eq(messages.receiverId, userId1))
         )
-      );
+      )
+      .orderBy(asc(messages.createdAt));
 
     return results.map((result: { id: number; content: string; senderId: string; receiverId: string; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
       ...result,

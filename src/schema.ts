@@ -784,6 +784,7 @@ export const messages = pgTable('messages', {
   senderId: varchar('sender_id').notNull().references(() => users.id),
   receiverId: varchar('receiver_id').notNull().references(() => users.id),
   content: text('content').notNull(),
+  sharedPostId: integer('shared_post_id').references(() => posts.id, { onDelete: 'set null' }),
   isRead: boolean('is_read').default(false),
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
 });
@@ -1278,3 +1279,76 @@ export const collaborations = pgTable('collaborations', {
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });
+
+// ============================================================================
+// Collections System - Pinterest-style collections for posts
+// ============================================================================
+
+// Tabla de colecciones de posts (estilo Pinterest)
+export const collections = pgTable('collections', {
+  id: serial('id').primaryKey(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+
+  // Información básica
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+
+  // Configuración de privacidad
+  isPublic: boolean('is_public').default(false),
+
+  // Cover image (portada de la colección)
+  coverImageUrl: varchar('cover_image_url'),
+
+  // Estadísticas
+  itemCount: integer('item_count').default(0),
+  viewCount: integer('view_count').default(0),
+
+  // Timestamps
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Tabla de items guardados en colecciones
+export const collectionItems = pgTable('collection_items', {
+  id: serial('id').primaryKey(),
+  collectionId: integer('collection_id').notNull().references(() => collections.id, { onDelete: 'cascade' }),
+  postId: integer('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+
+  // Notas personales del usuario sobre este item
+  notes: text('notes'),
+
+  // Timestamps
+  addedAt: timestamp('added_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  // Índice único para evitar duplicados
+  collectionPostIdx: uniqueIndex('collection_post_idx').on(table.collectionId, table.postId),
+}));
+
+// ============================================================================
+// Inspiration System - For artists to save references and inspirations
+// ============================================================================
+
+// Tabla de inspiraciones/referencias para artistas
+export const inspirations = pgTable('inspirations', {
+  id: serial('id').primaryKey(),
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  postId: integer('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+
+  // Por qué les inspiró
+  inspirationNote: text('inspiration_note'),
+
+  // Tags personalizados para organizar inspiraciones
+  tags: text('tags').array().default(sql`'{}'`),
+
+  // Tipo de inspiración
+  inspirationType: varchar('inspiration_type', {
+    enum: ['technique', 'composition', 'color', 'style', 'concept', 'other']
+  }),
+
+  // Timestamps
+  createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  // Índice único para evitar duplicados
+  userPostIdx: uniqueIndex('inspiration_user_post_idx').on(table.userId, table.postId),
+}));

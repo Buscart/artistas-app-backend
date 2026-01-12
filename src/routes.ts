@@ -403,6 +403,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/messages/threads', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const allMessages = await storage.getUserMessages(userId);
+
+      const threadsMap = new Map<string, {
+        userId: string;
+        lastMessageId: number;
+        lastMessageText: string;
+        lastMessageAt: Date | null;
+        otherUser: any;
+        unreadCount: number;
+      }>();
+
+      for (const m of allMessages) {
+        const otherUserId = m.senderId === userId ? m.receiverId : m.senderId;
+        const otherUser = m.senderId === userId ? (m as any).receiver : (m as any).sender;
+
+        const existing = threadsMap.get(otherUserId);
+        const isUnreadForMe = m.receiverId === userId && !m.isRead;
+        const unreadInc = isUnreadForMe ? 1 : 0;
+
+        if (!existing) {
+          threadsMap.set(otherUserId, {
+            userId: otherUserId,
+            lastMessageId: m.id,
+            lastMessageText: m.content,
+            lastMessageAt: m.createdAt || null,
+            otherUser,
+            unreadCount: unreadInc,
+          });
+          continue;
+        }
+
+        const prevDate = existing.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : 0;
+        const curDate = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+
+        if (curDate >= prevDate) {
+          existing.lastMessageId = m.id;
+          existing.lastMessageText = m.content;
+          existing.lastMessageAt = m.createdAt || null;
+          existing.otherUser = otherUser;
+        }
+        existing.unreadCount += unreadInc;
+      }
+
+      const threads = Array.from(threadsMap.values())
+        .sort((a, b) => {
+          const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+          const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+          return bTime - aTime;
+        })
+        .map((t) => ({
+          id: t.userId,
+          otherUser: t.otherUser,
+          lastMessage: {
+            id: t.lastMessageId,
+            text: t.lastMessageText,
+            createdAt: t.lastMessageAt,
+          },
+          unreadCount: t.unreadCount,
+        }));
+
+      res.json(threads);
+    } catch (error) {
+      console.error('Error fetching message threads:', error);
+      res.status(500).json({ message: 'Failed to fetch message threads' });
+    }
+  });
+
   app.get('/api/messages/conversation/:userId', isAuthenticated, async (req: any, res) => {
     try {
       const userId1 = req.user.claims.sub;

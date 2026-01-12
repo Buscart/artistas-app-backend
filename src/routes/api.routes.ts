@@ -90,6 +90,7 @@ import venuesRoutes from './venues.routes.js';
 import favoritesRoutes from './favorites.routes.js';
 import dislikedItemsRoutes from './dislikedItems.routes.js';
 import uploadRoutes from './upload.routes.js';
+import collectionsRoutes from './collections.routes.js';
 import { venuesController } from '../controllers/venues.controller.js';
 import { storage } from '../storage/index.js';
 
@@ -103,6 +104,123 @@ type RouteHandler<T = any> = RequestHandler<Record<string, string>, any, T>;
 
 // Auth routes
 router.use('/auth', authRoutes);
+
+// Messages routes (root: /api/messages/*)
+router.get('/messages', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'No autenticado' });
+    const messages = await storage.getUserMessages(userId);
+    return res.json(messages);
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    return res.status(500).json({ message: 'Error fetching messages' });
+  }
+});
+
+router.get('/messages/conversation/:userId', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const userId1 = req.user?.id;
+    const userId2 = req.params.userId;
+    if (!userId1) return res.status(401).json({ message: 'No autenticado' });
+    if (!userId2) return res.status(400).json({ message: 'userId requerido' });
+    const conversation = await storage.getConversation(userId1, userId2);
+    return res.json(conversation);
+  } catch (error) {
+    console.error('Error fetching conversation:', error);
+    return res.status(500).json({ message: 'Failed to fetch conversation' });
+  }
+});
+
+router.get('/messages/threads', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ message: 'No autenticado' });
+
+    const allMessages = await storage.getUserMessages(userId);
+
+    const threadsMap = new Map<string, {
+      userId: string;
+      lastMessageId: number;
+      lastMessageText: string;
+      lastMessageAt: Date | null;
+      otherUser: any;
+      unreadCount: number;
+    }>();
+
+    for (const m of allMessages as any[]) {
+      const otherUserId = m.senderId === userId ? m.receiverId : m.senderId;
+      const otherUser = m.senderId === userId ? m.receiver : m.sender;
+
+      const existing = threadsMap.get(otherUserId);
+      const isUnreadForMe = m.receiverId === userId && !m.isRead;
+      const unreadInc = isUnreadForMe ? 1 : 0;
+
+      if (!existing) {
+        threadsMap.set(otherUserId, {
+          userId: otherUserId,
+          lastMessageId: m.id,
+          lastMessageText: m.content,
+          lastMessageAt: m.createdAt || null,
+          otherUser,
+          unreadCount: unreadInc,
+        });
+        continue;
+      }
+
+      const prevDate = existing.lastMessageAt ? new Date(existing.lastMessageAt).getTime() : 0;
+      const curDate = m.createdAt ? new Date(m.createdAt).getTime() : 0;
+
+      if (curDate >= prevDate) {
+        existing.lastMessageId = m.id;
+        existing.lastMessageText = m.content;
+        existing.lastMessageAt = m.createdAt || null;
+        existing.otherUser = otherUser;
+      }
+      existing.unreadCount += unreadInc;
+    }
+
+    const threads = Array.from(threadsMap.values())
+      .sort((a, b) => {
+        const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+        const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+        return bTime - aTime;
+      })
+      .map((t) => ({
+        id: t.userId,
+        otherUser: t.otherUser,
+        lastMessage: {
+          id: t.lastMessageId,
+          text: t.lastMessageText,
+          createdAt: t.lastMessageAt,
+        },
+        unreadCount: t.unreadCount,
+      }));
+
+    return res.json(threads);
+  } catch (error) {
+    console.error('Error fetching message threads:', error);
+    return res.status(500).json({ message: 'Failed to fetch message threads' });
+  }
+});
+
+router.post('/messages', authMiddleware, async (req: any, res: Response) => {
+  try {
+    const senderId = req.user?.id;
+    const receiverId = req.body?.receiverId;
+    const content = req.body?.content;
+
+    if (!senderId) return res.status(401).json({ message: 'No autenticado' });
+    if (!receiverId || typeof receiverId !== 'string') return res.status(400).json({ message: 'receiverId requerido' });
+    if (!content || typeof content !== 'string') return res.status(400).json({ message: 'content requerido' });
+
+    const message = await storage.sendMessage({ senderId, receiverId, content, isRead: false });
+    return res.status(201).json(message);
+  } catch (error) {
+    console.error('Error sending message:', error);
+    return res.status(400).json({ message: 'Failed to send message' });
+  }
+});
 
 // API v1 routes
 const v1 = Router();
@@ -236,6 +354,9 @@ v1.use('/venues', authMiddleware, venuesRoutes);
 
 // Rutas de favoritos (protegidas)
 v1.use('/favorites', authMiddleware, favoritesRoutes);
+
+// Rutas de colecciones e inspiraciones (protegidas)
+v1.use('/collections', collectionsRoutes);
 
 // Rutas de items rechazados / "no me interesa" (protegidas)
 v1.use('/disliked-items', authMiddleware, dislikedItemsRoutes);
