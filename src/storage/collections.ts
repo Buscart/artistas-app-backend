@@ -110,6 +110,8 @@ export const collectionsStorage = {
    * Obtener posts de una colección
    */
   async getCollectionPosts(collectionId: number, userId: string) {
+    console.log(`📁 getCollectionPosts: collectionId=${collectionId}, userId=${userId}`);
+
     // Primero obtener todos los collection items con sus tipos
     const items = await db
       .select({
@@ -129,13 +131,19 @@ export const collectionsStorage = {
       )
       .orderBy(desc(collectionItems.addedAt));
 
+    console.log(`📝 Found ${items.length} collection items:`, items);
+
     if (items.length === 0) {
+      console.log('⚠️ No items found in collection');
       return [];
     }
 
     // Separar los IDs por tipo
     const regularPostIds = items.filter(item => item.postType === 'post').map(item => item.postId);
     const blogPostIds = items.filter(item => item.postType === 'blog').map(item => item.postId);
+
+    console.log(`📊 Regular post IDs:`, regularPostIds);
+    console.log(`📊 Blog post IDs:`, blogPostIds);
 
     // Obtener los posts regulares
     let regularPosts: any[] = [];
@@ -148,6 +156,8 @@ export const collectionsStorage = {
         .from(posts)
         .leftJoin(users, eq(posts.userId, users.id))
         .where(inArray(posts.id, regularPostIds));
+
+      console.log(`✅ Found ${regularPosts.length} regular posts`);
     }
 
     // Obtener los blog posts
@@ -161,6 +171,8 @@ export const collectionsStorage = {
         .from(blogPosts)
         .leftJoin(users, eq(blogPosts.authorId, users.id))
         .where(inArray(blogPosts.id, blogPostIds));
+
+      console.log(`✅ Found ${blogPostsData.length} blog posts`);
     }
 
     // Combinar los resultados manteniendo el orden original
@@ -203,6 +215,7 @@ export const collectionsStorage = {
       };
     }).filter(item => item !== null);
 
+    console.log(`✅ Returning ${result.length} posts after filtering`);
     return result;
   },
 

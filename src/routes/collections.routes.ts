@@ -30,14 +30,23 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
+
+    if (!userId) {
+      console.error('❌ User not authenticated in GET /:id');
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
     const collectionId = parseInt(req.params.id);
+    console.log(`📁 Fetching collection ${collectionId} for user ${userId}`);
 
     const collection = await collectionsStorage.getCollectionById(collectionId, userId);
 
     if (!collection) {
+      console.log(`❌ Collection ${collectionId} not found for user ${userId}`);
       return res.status(404).json({ error: 'Collection not found' });
     }
 
+    console.log(`✅ Collection found:`, collection);
     res.json(collection);
   } catch (error) {
     console.error('Error fetching collection:', error);
@@ -129,9 +138,19 @@ router.delete('/:id', authMiddleware, async (req: Request, res: Response) => {
 router.get('/:id/posts', authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user?.id;
+
+    if (!userId) {
+      console.error('❌ User not authenticated in GET /:id/posts');
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
     const collectionId = parseInt(req.params.id);
+    console.log(`📝 Fetching posts for collection ${collectionId} and user ${userId}`);
 
     const posts = await collectionsStorage.getCollectionPosts(collectionId, userId);
+    console.log(`✅ Found ${posts.length} posts in collection ${collectionId}`);
+    console.log(`📄 Posts data:`, JSON.stringify(posts, null, 2));
+
     res.json(posts);
   } catch (error) {
     console.error('Error fetching collection posts:', error);
