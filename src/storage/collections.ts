@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 import { collections, collectionItems, inspirations, posts, blogPosts, users } from '../schema.js';
-import { eq, and, desc, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, sql, or } from 'drizzle-orm';
 
 export const collectionsStorage = {
   // ============================================================================
@@ -155,7 +155,7 @@ export const collectionsStorage = {
         })
         .from(posts)
         .leftJoin(users, eq(posts.userId, users.id))
-        .where(inArray(posts.id, regularPostIds));
+        .where(sql`${posts.id} = ANY(${regularPostIds})`);
 
       console.log(`✅ Found ${regularPosts.length} regular posts`);
     }
@@ -170,7 +170,7 @@ export const collectionsStorage = {
         })
         .from(blogPosts)
         .leftJoin(users, eq(blogPosts.authorId, users.id))
-        .where(inArray(blogPosts.id, blogPostIds));
+        .where(sql`${blogPosts.id} = ANY(${blogPostIds})`);
 
       console.log(`✅ Found ${blogPostsData.length} blog posts`);
     }
@@ -371,7 +371,7 @@ export const collectionsStorage = {
         })
         .from(posts)
         .leftJoin(users, eq(posts.userId, users.id))
-        .where(inArray(posts.id, regularPostIds));
+        .where(sql`${posts.id} = ANY(${regularPostIds})`);
     }
 
     // Obtener los blog posts
@@ -384,7 +384,7 @@ export const collectionsStorage = {
         })
         .from(blogPosts)
         .leftJoin(users, eq(blogPosts.authorId, users.id))
-        .where(inArray(blogPosts.id, blogPostIds));
+        .where(sql`${blogPosts.id} = ANY(${blogPostIds})`);
     }
 
     // Combinar los resultados manteniendo el orden original
