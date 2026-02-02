@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { EventService } from './event.service.js';
 import { CreateEventInput, UpdateEventInput, EventFilterOptions } from './event.types.js';
 import { createEventSchema, updateEventSchema } from './event.validations.js';
+import { CertificateService } from '../../services/certificate.service.js';
 
 /**
  * Controlador de eventos - Maneja las peticiones HTTP
@@ -977,7 +978,7 @@ class EventController {
   // ========== CERTIFICADOS ==========
 
   /**
-   * Genera el certificado de asistencia
+   * Genera el certificado de asistencia en PDF
    */
   static async generateCertificate(req: Request, res: Response) {
     try {
@@ -987,13 +988,46 @@ class EventController {
 
       const { eventId } = req.params;
       const userId = req.user.id;
+      const format = req.query.format as string; // 'pdf' o 'json'
 
-      const certificate = await EventService.generateCertificate(parseInt(eventId), userId);
+      // Obtener datos del certificado
+      const certificateData = await EventService.generateCertificate(parseInt(eventId), userId);
 
-      res.status(200).json({
-        success: true,
-        data: certificate,
+      // Si se solicita JSON, retornar datos
+      if (format === 'json') {
+        return res.status(200).json({
+          success: true,
+          data: certificateData,
+        });
+      }
+
+      // Generar código único
+      const certificateCode = CertificateService.generateCertificateCode(
+        parseInt(eventId),
+        userId
+      );
+
+      // Generar PDF
+      const pdfBuffer = await CertificateService.generatePDF({
+        eventId: parseInt(eventId),
+        eventTitle: certificateData.eventTitle,
+        eventDate: new Date(certificateData.eventDate),
+        eventEndDate: certificateData.eventEndDate ? new Date(certificateData.eventEndDate) : undefined,
+        eventLocation: certificateData.eventLocation,
+        attendeeName: certificateData.attendeeName,
+        attendeeId: userId,
+        checkedInAt: new Date(certificateData.checkedInAt),
+        certificateCode,
       });
+
+      // Configurar headers para descarga de PDF
+      const filename = `certificado-${certificateData.eventTitle.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}.pdf`;
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', pdfBuffer.length);
+
+      return res.send(pdfBuffer);
     } catch (error: any) {
       console.error('Error al generar certificado:', error);
 
