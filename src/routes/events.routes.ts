@@ -69,10 +69,9 @@ eventsRoutes.patch('/:id/cancel', authMiddleware, EventController.cancelEvent);
 
 /**
  * DELETE /api/v1/events/:id
- * Eliminar un evento (requiere auth)
+ * Eliminar un evento permanentemente (requiere auth, solo organizador, sin asistentes aprobados)
  */
-// TODO: Implementar deleteEvent en el controlador
-// eventsRoutes.delete('/:id', authMiddleware, EventController.deleteEvent);
+eventsRoutes.delete('/:id', authMiddleware, EventController.deleteEvent);
 
 // ========== GESTIÓN DE ASISTENTES (Luma-style) ==========
 
@@ -161,6 +160,12 @@ eventsRoutes.post('/:eventId/reviews', authMiddleware, EventController.createRev
  * Obtener todas las reseñas de un evento (público)
  */
 eventsRoutes.get('/:eventId/reviews', EventController.getEventReviews);
+
+/**
+ * POST /api/v1/events/:eventId/reviews/:reviewId/response
+ * Responder a una reseña (solo organizador, requiere auth)
+ */
+eventsRoutes.post('/:eventId/reviews/:reviewId/response', authMiddleware, EventController.respondToReview);
 
 // ========== CERTIFICADOS ==========
 

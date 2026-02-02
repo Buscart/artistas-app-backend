@@ -409,6 +409,79 @@ class EventController {
   }
 
   /**
+   * Elimina un evento permanentemente
+   */
+  static async deleteEvent(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({
+          success: false,
+          error: 'No autorizado',
+          message: 'Debes iniciar sesión para eliminar un evento',
+          code: 'UNAUTHORIZED'
+        });
+      }
+
+      const { id } = req.params;
+      const eventId = parseInt(id, 10);
+      const userId = req.user.id;
+
+      if (isNaN(eventId)) {
+        return res.status(400).json({
+          success: false,
+          error: 'ID de evento no válido',
+          code: 'INVALID_EVENT_ID'
+        });
+      }
+
+      const deletedEvent = await EventService.deleteEvent(eventId, userId);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Evento eliminado exitosamente',
+        data: deletedEvent
+      });
+
+    } catch (error: any) {
+      console.error('Error al eliminar el evento:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({
+          success: false,
+          error: 'Evento no encontrado',
+          code: 'EVENT_NOT_FOUND'
+        });
+      }
+
+      if (error.message === 'FORBIDDEN') {
+        return res.status(403).json({
+          success: false,
+          error: 'No autorizado',
+          message: 'Solo el organizador del evento puede eliminarlo',
+          code: 'FORBIDDEN'
+        });
+      }
+
+      if (error.message === 'HAS_ATTENDEES') {
+        return res.status(400).json({
+          success: false,
+          error: 'No se puede eliminar',
+          message: 'No puedes eliminar un evento que tiene asistentes aprobados o con check-in. Cancela el evento en su lugar.',
+          code: 'HAS_ATTENDEES'
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        error: 'Error interno del servidor',
+        message: 'No se pudo eliminar el evento',
+        code: 'INTERNAL_SERVER_ERROR',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+
+  /**
    * Busca eventos con filtros
    */
   static async searchEvents(req: Request, res: Response) {
@@ -579,13 +652,33 @@ class EventController {
 
   /**
    * Obtiene estadísticas de asistentes para un evento
+   * - Usuarios no autenticados: solo ven total de asistentes y capacidad
+   * - Organizador: ve todas las estadísticas (pending, rejected, waitlisted, etc.)
    */
   static async getAttendeeStats(req: Request, res: Response) {
     try {
       const { eventId } = req.params;
+      const userId = (req as any).user?.id;
 
       const stats = await EventService.getAttendeeStats(parseInt(eventId));
 
+      // Verificar si el usuario es el organizador
+      const isOrganizer = await EventService.isEventOrganizer(parseInt(eventId), userId);
+
+      // Para usuarios no autenticados o no organizadores, limitar datos
+      if (!isOrganizer) {
+        return res.status(200).json({
+          success: true,
+          data: {
+            approved: stats.approved,
+            capacity: stats.capacity,
+            availableSpots: stats.availableSpots,
+            // No exponer: pending, rejected, waitlisted, checked_in
+          }
+        });
+      }
+
+      // Para el organizador, retornar todas las estadísticas
       res.status(200).json({
         success: true,
         data: stats
@@ -906,6 +999,56 @@ class EventController {
     } catch (error) {
       console.error('Error al obtener reseñas:', error);
       res.status(500).json({ error: 'Error al obtener las reseñas' });
+    }
+  }
+
+  /**
+   * Permite al organizador responder a una reseña
+   */
+  static async respondToReview(req: Request, res: Response) {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: 'No autorizado' });
+      }
+
+      const { eventId, reviewId } = req.params;
+      const { response } = req.body;
+      const userId = req.user.id;
+
+      if (!response || typeof response !== 'string' || response.trim().length === 0) {
+        return res.status(400).json({ error: 'La respuesta es requerida' });
+      }
+
+      if (response.length > 1000) {
+        return res.status(400).json({ error: 'La respuesta no puede exceder 1000 caracteres' });
+      }
+
+      const updatedReview = await EventService.respondToReview(
+        parseInt(eventId),
+        parseInt(reviewId),
+        userId,
+        response
+      );
+
+      res.status(200).json({
+        success: true,
+        message: 'Respuesta agregada exitosamente',
+        data: updatedReview,
+      });
+    } catch (error: any) {
+      console.error('Error al responder reseña:', error);
+
+      if (error.message === 'EVENT_NOT_FOUND') {
+        return res.status(404).json({ error: 'Evento no encontrado' });
+      }
+      if (error.message === 'FORBIDDEN') {
+        return res.status(403).json({ error: 'Solo el organizador puede responder reseñas' });
+      }
+      if (error.message === 'REVIEW_NOT_FOUND') {
+        return res.status(404).json({ error: 'Reseña no encontrada' });
+      }
+
+      res.status(500).json({ error: 'Error al responder la reseña' });
     }
   }
 

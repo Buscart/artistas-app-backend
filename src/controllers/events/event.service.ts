@@ -382,6 +382,78 @@ export class EventService {
   }
 
   /**
+   * Elimina un evento permanentemente
+   * Solo se puede eliminar si:
+   * - El usuario es el organizador
+   * - No hay asistentes aprobados o con check-in
+   */
+  static async deleteEvent(eventId: number, userId: string) {
+    // Verificar si el evento existe
+    const [existingEvent] = await db
+      .select()
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!existingEvent) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    // Verificar permisos
+    if (existingEvent.organizerId !== userId) {
+      throw new Error('FORBIDDEN');
+    }
+
+    // Verificar si hay asistentes aprobados o con check-in
+    const [attendeeCount] = await db
+      .select({ count: count() })
+      .from(eventAttendees)
+      .where(and(
+        eq(eventAttendees.eventId, eventId),
+        or(
+          eq(eventAttendees.status, 'approved'),
+          eq(eventAttendees.status, 'checked_in'),
+          sql`${eventAttendees.checkedInAt} IS NOT NULL`
+        )
+      ));
+
+    if (attendeeCount && Number(attendeeCount.count) > 0) {
+      throw new Error('HAS_ATTENDEES');
+    }
+
+    // Eliminar registros relacionados primero (en orden)
+    // 1. Eliminar asistentes pendientes/rechazados
+    await db.delete(eventAttendees).where(eq(eventAttendees.eventId, eventId));
+
+    // 2. Eliminar reseñas
+    await db.delete(eventReviews).where(eq(eventReviews.eventId, eventId));
+
+    // 3. Eliminar agenda
+    await db.delete(eventAgenda).where(eq(eventAgenda.eventId, eventId));
+
+    // 4. Finalmente eliminar el evento
+    const [deletedEvent] = await db
+      .delete(events)
+      .where(eq(events.id, eventId))
+      .returning();
+
+    return deletedEvent;
+  }
+
+  /**
+   * Verifica si un usuario es el organizador de un evento
+   */
+  static async isEventOrganizer(eventId: number, userId?: string): Promise<boolean> {
+    if (!userId) return false;
+
+    const [event] = await db
+      .select({ organizerId: events.organizerId })
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    return event?.organizerId === userId;
+  }
+
+  /**
    * Busca eventos con filtros
    */
   static async searchEvents(filters: EventFilterOptions) {
@@ -1106,6 +1178,50 @@ export class EventService {
       .orderBy(desc(eventReviews.createdAt));
 
     return reviews;
+  }
+
+  /**
+   * Permite al organizador responder a una reseña
+   */
+  static async respondToReview(eventId: number, reviewId: number, organizerId: string, response: string) {
+    // Verificar que el evento existe y el usuario es el organizador
+    const [event] = await db
+      .select({ organizerId: events.organizerId })
+      .from(events)
+      .where(eq(events.id, eventId));
+
+    if (!event) {
+      throw new Error('EVENT_NOT_FOUND');
+    }
+
+    if (event.organizerId !== organizerId) {
+      throw new Error('FORBIDDEN');
+    }
+
+    // Verificar que la reseña existe y pertenece a este evento
+    const [review] = await db
+      .select()
+      .from(eventReviews)
+      .where(and(
+        eq(eventReviews.id, reviewId),
+        eq(eventReviews.eventId, eventId)
+      ));
+
+    if (!review) {
+      throw new Error('REVIEW_NOT_FOUND');
+    }
+
+    // Actualizar la reseña con la respuesta del organizador
+    const [updatedReview] = await db
+      .update(eventReviews)
+      .set({
+        organizerResponse: response.trim(),
+        organizerResponseAt: new Date(),
+      })
+      .where(eq(eventReviews.id, reviewId))
+      .returning();
+
+    return updatedReview;
   }
 
   // ========== HISTORIAL DE ASISTENCIA ==========
