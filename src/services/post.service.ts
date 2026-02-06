@@ -545,6 +545,10 @@ export function getPostFields() {
     commentCount: posts.commentCount,
     shareCount: posts.shareCount,
     viewCount: posts.viewCount,
+    saveCount: sql<number>`(
+      SELECT COUNT(*)::int FROM collection_items ci
+      WHERE ci.post_id = ${posts.id} AND ci.post_type = 'post'
+    )`,
     createdAt: posts.createdAt,
     updatedAt: posts.updatedAt,
   };

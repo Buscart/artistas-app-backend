@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { storage } from '../storage/index.js';
 import { eq, and, desc, gte, lte } from 'drizzle-orm';
-import { bookings } from '../schema.js';
+import { bookings, userContracts, artists } from '../schema.js';
 
 export const bookingsController = {
   // Obtener todas las reservas de una empresa
@@ -213,7 +213,7 @@ export const bookingsController = {
     }
   },
 
-  // Confirmar una reserva (solo dueño de la empresa)
+  // Confirmar una reserva (solo dueño de la empresa o artista)
   async confirmBooking(req: any, res: Response) {
     try {
       const { id } = req.params;
@@ -234,20 +234,156 @@ export const bookingsController = {
         return res.status(404).json({ message: 'Reserva no encontrada' });
       }
 
-      // TODO: Verificar que el usuario sea dueño de la empresa
+      const bookingData = booking[0];
 
+      // Obtener el userId del artista si la reserva tiene artistId
+      let artistUserId: string | null = null;
+      if (bookingData.artistId) {
+        const artistRecord = await storage.db
+          .select()
+          .from(artists)
+          .where(eq(artists.id, bookingData.artistId))
+          .limit(1);
+
+        if (artistRecord && artistRecord.length > 0) {
+          artistUserId = artistRecord[0].userId;
+        }
+      }
+
+      // Verificar que el usuario sea el artista asociado a la reserva
+      const isArtist = artistUserId && artistUserId === userId;
+
+      // También verificar si es el cliente que creó la reserva (para cancelaciones, etc.)
+      const isClient = bookingData.userId === userId;
+
+      if (!isArtist && !isClient) {
+        return res.status(403).json({
+          message: 'No tienes permiso para confirmar esta reserva. Solo el artista puede confirmar.'
+        });
+      }
+
+      // Solo el artista puede confirmar (el cliente solo puede cancelar)
+      if (!isArtist) {
+        return res.status(403).json({
+          message: 'Solo el artista puede confirmar la reserva.'
+        });
+      }
+
+      // Crear el contrato asociado a la reserva
+      let contractId: number | null = null;
+      if (artistUserId && bookingData.userId) {
+        try {
+          // Generar términos del contrato
+          const serviceDate = bookingData.startDate
+            ? new Date(bookingData.startDate).toLocaleDateString('es-CO')
+            : 'Por definir';
+          const amount = bookingData.totalPrice
+            ? parseFloat(bookingData.totalPrice.toString()).toLocaleString('es-CO', { style: 'currency', currency: 'COP' })
+            : 'Por definir';
+
+          const contractTerms = `
+CONTRATO DE PRESTACIÓN DE SERVICIOS
+
+1. PARTES
+Este contrato se celebra entre el CLIENTE (contratante) y el ARTISTA (prestador del servicio) a través de la plataforma BuscartPro.
+
+2. OBJETO DEL CONTRATO
+El ARTISTA se compromete a prestar el servicio de: ${bookingData.title}
+${bookingData.description ? `Descripción: ${bookingData.description}` : ''}
+
+3. FECHA Y LUGAR
+Fecha del servicio: ${serviceDate}
+${bookingData.eventLocation ? `Ubicación: ${bookingData.eventLocation}` : ''}
+${bookingData.eventCity ? `Ciudad: ${bookingData.eventCity}` : ''}
+
+4. VALOR Y FORMA DE PAGO
+Valor total del servicio: ${amount}
+El pago se realizará a través de la plataforma BuscartPro.
+
+5. OBLIGACIONES DEL ARTISTA
+- Prestar el servicio acordado en la fecha y hora establecidas
+- Cumplir con los estándares de calidad profesional
+- Comunicar cualquier inconveniente con anticipación
+
+6. OBLIGACIONES DEL CLIENTE
+- Realizar el pago acordado
+- Proporcionar las condiciones necesarias para la prestación del servicio
+- Comunicar cualquier cambio con anticipación
+
+7. CANCELACIÓN
+- Cancelación con más de 48 horas: Reembolso del 100%
+- Cancelación entre 24-48 horas: Reembolso del 50%
+- Cancelación con menos de 24 horas: Sin reembolso
+
+8. RESOLUCIÓN DE CONFLICTOS
+Cualquier disputa será mediada por BuscartPro. En caso de no llegar a acuerdo, se someterá a las leyes colombianas.
+
+Al firmar este contrato, ambas partes aceptan los términos y condiciones aquí establecidos.
+
+Fecha de generación: ${new Date().toLocaleDateString('es-CO')}
+          `.trim();
+
+          // Calcular comisión de plataforma (10%)
+          const totalPrice = bookingData.totalPrice ? parseFloat(bookingData.totalPrice.toString()) : 0;
+          const platformFee = totalPrice * 0.10;
+          const artistAmount = totalPrice - platformFee;
+
+          // Crear el contrato
+          const [newContract] = await storage.db
+            .insert(userContracts)
+            .values({
+              userId: bookingData.userId,
+              artistId: artistUserId,
+              serviceType: bookingData.bookingType || 'service',
+              serviceName: bookingData.title,
+              description: bookingData.description || undefined,
+              amount: bookingData.totalPrice?.toString() || '0',
+              platformFee: platformFee.toString(),
+              artistAmount: artistAmount.toString(),
+              status: 'pending',
+              paymentStatus: 'pending',
+              serviceDate: bookingData.startDate,
+              clientSigned: false,
+              artistSigned: false,
+              contractTerms,
+              metadata: {
+                bookingId: bookingData.id,
+                bookingType: bookingData.bookingType,
+                location: bookingData.eventLocation,
+                city: bookingData.eventCity,
+                services: bookingData.services,
+              },
+            })
+            .returning();
+
+          contractId = newContract.id;
+          console.log(`✅ Contrato #${contractId} creado para la reserva #${bookingData.id}`);
+        } catch (contractError) {
+          console.error('Error al crear contrato:', contractError);
+          // Continuamos sin contrato si falla
+        }
+      }
+
+      // Actualizar la reserva con el estado confirmado y el contractId
       const updatedBooking = await storage.db
         .update(bookings)
         .set({
           status: 'confirmed',
           confirmedAt: new Date(),
           companyNotes,
+          contractId: contractId,
           updatedAt: new Date(),
         })
         .where(eq(bookings.id, parseInt(id)))
         .returning();
 
-      return res.json(updatedBooking[0]);
+      return res.json({
+        ...updatedBooking[0],
+        contractId,
+        message: contractId
+          ? 'Reserva confirmada. Se ha generado un contrato que debe ser firmado por ambas partes.'
+          : 'Reserva confirmada.'
+      });
     } catch (error) {
       console.error('Error al confirmar reserva:', error);
       return res.status(500).json({ message: 'Error al confirmar reserva' });

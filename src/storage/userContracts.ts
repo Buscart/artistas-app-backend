@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 import { userContracts, userQuotations } from '../schema.js';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, or, desc, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 type UserContract = typeof userContracts.$inferSelect;
@@ -14,7 +14,7 @@ export class UserContractsStorage {
   // ============ CONTRATACIONES ============
 
   /**
-   * Obtener historial de contrataciones del usuario
+   * Obtener historial de contrataciones del usuario (como cliente o artista)
    */
   async getUserContracts(
     userId: string,
@@ -22,10 +22,27 @@ export class UserContractsStorage {
       limit?: number;
       offset?: number;
       status?: string;
+      role?: 'client' | 'artist' | 'both';
     }
   ): Promise<UserContract[]> {
-    const conditions = [eq(userContracts.userId, userId)];
-    
+    const role = options?.role || 'both';
+
+    // Construir condición de usuario según el rol
+    let userCondition;
+    if (role === 'client') {
+      userCondition = eq(userContracts.userId, userId);
+    } else if (role === 'artist') {
+      userCondition = eq(userContracts.artistId, userId);
+    } else {
+      // both - incluir contratos donde sea cliente o artista
+      userCondition = or(
+        eq(userContracts.userId, userId),
+        eq(userContracts.artistId, userId)
+      );
+    }
+
+    const conditions = [userCondition];
+
     if (options?.status) {
       conditions.push(eq(userContracts.status, options.status as any));
     }

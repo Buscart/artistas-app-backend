@@ -28,10 +28,13 @@ export class SocialService {
         LIMIT ${limit}
       `);
 
-      console.log('✅ Found suggested users:', (result as any).rows.length);
-      console.log('📋 Users:', (result as any).rows);
+      // postgres.js devuelve directamente un array, no un objeto con .rows
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
 
-      return (result as any).rows || [];
+      console.log('✅ Found suggested users:', rows.length);
+      console.log('📋 Users:', rows);
+
+      return rows;
     } catch (error) {
       console.error('❌ Error getting suggested users:', error);
       return [];
@@ -59,7 +62,8 @@ export class SocialService {
         LIMIT ${limit}
       `);
 
-      const rows = (result as any).rows || [];
+      // postgres.js devuelve directamente un array
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
 
       // Si no hay hashtags suficientes, agregar tendencias por defecto
       if (rows.length < limit) {

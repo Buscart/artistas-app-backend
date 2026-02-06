@@ -11,10 +11,11 @@ export const dislikedItemsController = {
       const { type, id } = req.body;
 
       if (!type || !id) {
-        return res.status(400).json({
+        res.status(400).json({
           success: false,
           message: 'Tipo e ID son requeridos',
         });
+        return;
       }
 
       const dislikedItem = await dislikedItemsService.addDislikedItem(userId, type, id);

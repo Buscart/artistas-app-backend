@@ -69,12 +69,20 @@ router.get('/:id', authMiddleware, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Contratación no encontrada' });
     }
 
-    // Verificar que la contratación pertenece al usuario
-    if (contract.userId !== userId) {
+    // Verificar que el usuario tiene acceso (cliente o artista)
+    const isClient = contract.userId === userId;
+    const isArtist = contract.artistId === userId;
+
+    if (!isClient && !isArtist) {
       return res.status(403).json({ error: 'No autorizado' });
     }
 
-    res.json(contract);
+    // Agregar información de rol del usuario
+    res.json({
+      ...contract,
+      isClient,
+      isArtist,
+    });
   } catch (error) {
     console.error('Error getting contract:', error);
     res.status(500).json({ error: 'Error al obtener la contratación' });

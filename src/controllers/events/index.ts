@@ -11,6 +11,7 @@ import EventController from './event.controller.js';
 export default {
   // Métodos del controlador
   getEventById: EventController.getEventById,
+  getMyEvents: EventController.getMyEvents,
   createEvent: EventController.createEvent,
   updateEvent: EventController.updateEvent,
   cancelEvent: EventController.cancelEvent,

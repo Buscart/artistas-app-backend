@@ -29,4 +29,10 @@ favoritesRoutes.get(
   asyncHandler(favoritesController.getFavoriteIds)
 );
 
+favoritesRoutes.post(
+  '/cleanup',
+  authMiddleware,
+  asyncHandler(favoritesController.cleanupDuplicates)
+);
+
 export default favoritesRoutes;

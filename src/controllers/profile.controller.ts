@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { db } from '../db.js';
-import { users, artists, companies, reviews, categories, disciplines, roles, specializations } from '../schema.js';
+import { users, artists, companies, reviews, categories, disciplines, roles, specializations, gallery, featuredItems } from '../schema.js';
 import { eq, and, or, desc, sql } from 'drizzle-orm';
 
 // Nota: Se removieron tipos externos no definidos (User, Artist) para evitar conflictos de compilación.
@@ -377,17 +377,17 @@ export const getPublicProfile = async (req: Request, res: Response) => {
 
         // Obtener trabajos destacados del portafolio
         try {
-          // Usar consulta SQL directa para evitar problemas de tipos
-          const featuredWorkResult: any = await db.execute(sql`
-            SELECT *
-            FROM portfolio_photos
-            WHERE user_id = ${id}
-              AND is_featured = true
-              AND is_public = true
-            ORDER BY order_position ASC
-            LIMIT 4
-          `);
-          profileData.featuredWork = Array.isArray(featuredWorkResult) ? featuredWorkResult : [];
+          // Usar la tabla gallery en lugar de portfolio_photos
+          const featuredWorkResult = await db.select()
+            .from(gallery)
+            .where(and(
+              eq(gallery.userId, id),
+              eq(gallery.isFeatured, true),
+              eq(gallery.isPublic, true)
+            ))
+            .orderBy(gallery.orderPosition)
+            .limit(4);
+          profileData.featuredWork = featuredWorkResult || [];
         } catch (error) {
           console.error('Error al obtener trabajos destacados:', error);
           profileData.featuredWork = [];

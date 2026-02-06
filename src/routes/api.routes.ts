@@ -19,7 +19,10 @@ import { userController } from '../controllers/user.controller.js';
 // Importar controladores de elementos destacados
 import * as featuredController from '../controllers/featured.controller.js';
 
-// Importar rutas del dashboard (comentado - conflicto con activityRoutes)
+// Importar controlador del dashboard
+import { dashboardController } from '../controllers/dashboard.controller.js';
+
+// Importar rutas del dashboard (comentado - conflicto con activityRoutes que ya maneja /dashboard/stats)
 // import dashboardRoutes from './dashboard.routes.js';
 
 // Importar controladores de ofertas
@@ -57,6 +60,9 @@ import recommendationsRoutes from './recommendations.routes.js';
 
 // Importar rutas de cotizaciones
 import quotationsRoutes from './quotations.routes.js';
+
+// Importar rutas de pagos
+import paymentsRoutes from './payments.routes.js';
 
 // Importar rutas de eventos
 import eventsRoutes from './events.routes.js';
@@ -244,6 +250,11 @@ router.get('/v1/categories', async (_req: Request, res: Response) => {
   }
 });
 
+// Rutas públicas (sin autenticación)
+v1.get('/profile/public/:id', profileController.getPublic as RouteHandler); // Ruta pública
+v1.get('/users/:userId', userController.getPublicProfile as RouteHandler); // Ruta pública
+// La ruta /portfolio/user/:userId/featured es manejada por portfolioRoutes montado abajo
+
 // Rutas protegidas (requieren autenticación)
 const protectedRoutes = Router();
 protectedRoutes.use(authMiddleware);
@@ -276,7 +287,7 @@ pages.use('/hiring', hiringRoutes);
 pages.use('/profile', profilePageRoutes);
 v1.use('/pages', pages);
 
-// Rutas de portafolio (perfil -> portfolio) protegidas
+// Rutas de portafolio (protegidas)
 v1.use('/portfolio', authMiddleware, portfolioRoutes);
 
 // Rutas de contratos y cotizaciones (protegidas)
@@ -309,6 +320,9 @@ v1.use('/recommendations', recommendationsRoutes);
 
 // Rutas de cotizaciones
 v1.use('/quotations', quotationsRoutes);
+
+// Rutas de pagos (protegidas - el middleware está en el router)
+v1.use('/payments', paymentsRoutes);
 
 // Rutas de hiring (ofertas públicas de trabajo)
 v1.use('/hiring', hiringRoutes);
@@ -597,6 +611,9 @@ protectedRoutes.put('/artist/me', (async (req: any, res: Response) => {
 // Rutas del dashboard (comentado - conflicto con activityRoutes que ya maneja /dashboard/stats)
 // v1.use('/dashboard', dashboardRoutes);
 
+// Ruta específica para estadísticas del dashboard
+v1.get('/dashboard/stats', authMiddleware, (dashboardController as any).getStats.bind(dashboardController));
+
 // Rutas de ofertas
 v1.post('/offers', offerController.create as RouteHandler);
 v1.get('/offers', offerController.getAll as RouteHandler);
@@ -607,12 +624,6 @@ v1.patch('/offers/:id/status', offerController.updateStatus as RouteHandler);
 v1.get('/profiles', profileController.getAll as RouteHandler);
 v1.get('/profiles/:id', profileController.getById as RouteHandler);
 v1.get('/profiles/:id/reviews', profileController.getReviews as RouteHandler);
-
-// Ruta pública de perfil completo (con trabajos destacados)
-v1.get('/profile/public/:id', profileController.getPublic as RouteHandler);
-
-// Rutas públicas de usuario
-v1.get('/users/:userId', userController.getPublicProfile as RouteHandler);
 
 // Montar rutas protegidas en v1
 v1.use(protectedRoutes);

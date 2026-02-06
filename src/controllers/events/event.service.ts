@@ -3,6 +3,7 @@ import { events, categories, users, eventAttendees, eventReviews, eventAgenda } 
 import { db } from '../../db.js';
 import { generateUniqueSlug } from './event.utils.js';
 import { CreateEventInput, UpdateEventInput, EventFilterOptions } from './event.types.js';
+import { cacheService, CacheKeys, CacheTTL } from '../../services/cache.service.js';
 
 /**
  * Servicio para manejar la lógica de negocio de eventos
@@ -266,6 +267,11 @@ export class EventService {
       .values(newEvent)
       .returning();
 
+    // Invalidar caché relacionado
+    cacheService.invalidateUserEvents(userId);
+    cacheService.del(CacheKeys.EVENTS_UPCOMING);
+    cacheService.del(CacheKeys.EVENTS_PUBLIC);
+
     return newEventRecord;
   }
 
@@ -273,13 +279,17 @@ export class EventService {
    * Obtiene los eventos creados por un usuario
    */
   static async getMyEvents(userId: string) {
-    const userEvents = await db
-      .select()
-      .from(events)
-      .where(eq(events.organizerId, userId))
-      .orderBy(sql`${events.startDate} DESC`);
+    const cacheKey = CacheKeys.EVENTS_BY_USER(userId);
 
-    return userEvents;
+    return cacheService.getOrSet(cacheKey, async () => {
+      const userEvents = await db
+        .select()
+        .from(events)
+        .where(eq(events.organizerId, userId))
+        .orderBy(sql`${events.startDate} DESC`);
+
+      return userEvents;
+    }, CacheTTL.MEDIUM);
   }
 
   /**
@@ -341,6 +351,10 @@ export class EventService {
       .where(eq(events.id, eventId))
       .returning();
 
+    // Invalidar caché relacionado
+    cacheService.invalidateEvent(eventId);
+    cacheService.invalidateUserEvents(userId);
+
     return updatedEvent;
   }
 
@@ -377,6 +391,10 @@ export class EventService {
       })
       .where(eq(events.id, eventId))
       .returning();
+
+    // Invalidar caché relacionado
+    cacheService.invalidateEvent(eventId);
+    cacheService.invalidateUserEvents(userId);
 
     return cancelledEvent;
   }
@@ -435,6 +453,10 @@ export class EventService {
       .delete(events)
       .where(eq(events.id, eventId))
       .returning();
+
+    // Invalidar caché relacionado
+    cacheService.invalidateEvent(eventId);
+    cacheService.invalidateUserEvents(userId);
 
     return deletedEvent;
   }
@@ -602,47 +624,51 @@ export class EventService {
    * Obtiene próximos eventos
    */
   static async getUpcomingEvents(limit: string = '10') {
-    const today = new Date();
+    const cacheKey = `${CacheKeys.EVENTS_UPCOMING}:${limit}`;
 
-    const upcomingEvents = await db
-      .select({
-        id: events.id,
-        title: events.title,
-        slug: events.slug,
-        shortDescription: events.shortDescription,
-        startDate: events.startDate,
-        endDate: events.endDate,
-        timezone: events.timezone,
-        locationType: events.locationType,
-        address: events.address,
-        city: events.city,
-        state: events.state,
-        country: events.country,
-        isFree: events.isFree,
-        ticketPrice: events.ticketPrice,
-        featuredImage: events.featuredImage,
-        status: events.status,
-        organizer: {
-          id: users.id,
-          displayName: users.displayName,
-          profileImageUrl: users.profileImageUrl,
-        },
-        category: sql`${categories.name} as category_name`,
-      })
-      .from(events)
-      .leftJoin(users, eq(events.organizerId, users.id))
-      .leftJoin(categories, eq(events.categoryId, categories.id))
-      .where(
-        and(
-          gte(events.startDate, today),
-          eq(events.status, 'published'),
-          ne(events.status, 'cancelled')
+    return cacheService.getOrSet(cacheKey, async () => {
+      const today = new Date();
+
+      const upcomingEvents = await db
+        .select({
+          id: events.id,
+          title: events.title,
+          slug: events.slug,
+          shortDescription: events.shortDescription,
+          startDate: events.startDate,
+          endDate: events.endDate,
+          timezone: events.timezone,
+          locationType: events.locationType,
+          address: events.address,
+          city: events.city,
+          state: events.state,
+          country: events.country,
+          isFree: events.isFree,
+          ticketPrice: events.ticketPrice,
+          featuredImage: events.featuredImage,
+          status: events.status,
+          organizer: {
+            id: users.id,
+            displayName: users.displayName,
+            profileImageUrl: users.profileImageUrl,
+          },
+          category: sql`${categories.name} as category_name`,
+        })
+        .from(events)
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .leftJoin(categories, eq(events.categoryId, categories.id))
+        .where(
+          and(
+            gte(events.startDate, today),
+            eq(events.status, 'published'),
+            ne(events.status, 'cancelled')
+          )
         )
-      )
-      .orderBy(events.startDate)
-      .limit(Number(limit));
+        .orderBy(events.startDate)
+        .limit(Number(limit));
 
-    return upcomingEvents;
+      return upcomingEvents;
+    }, CacheTTL.MEDIUM);
   }
 
   /**
@@ -713,6 +739,10 @@ export class EventService {
       })
       .returning();
 
+    // Invalidar caché relacionado
+    cacheService.invalidateEventAttendees(eventId);
+    cacheService.invalidateUserEvents(userId);
+
     return newAttendee;
   }
 
@@ -736,6 +766,10 @@ export class EventService {
     await db
       .delete(eventAttendees)
       .where(eq(eventAttendees.id, registration.id));
+
+    // Invalidar caché relacionado
+    cacheService.invalidateEventAttendees(eventId);
+    cacheService.invalidateUserEvents(userId);
 
     return { success: true };
   }
@@ -821,6 +855,9 @@ export class EventService {
       .where(eq(eventAttendees.id, attendeeId))
       .returning();
 
+    // Invalidar caché de asistentes
+    cacheService.invalidateEventAttendees(eventId);
+
     return updatedAttendee;
   }
 
@@ -851,6 +888,9 @@ export class EventService {
       })
       .where(eq(eventAttendees.id, attendeeId))
       .returning();
+
+    // Invalidar caché de asistentes
+    cacheService.invalidateEventAttendees(eventId);
 
     return updatedAttendee;
   }
@@ -886,6 +926,9 @@ export class EventService {
       })
       .where(eq(eventAttendees.id, attendeeId))
       .returning();
+
+    // Invalidar caché de asistentes
+    cacheService.invalidateEventAttendees(eventId);
 
     return updatedAttendee;
   }
@@ -978,6 +1021,12 @@ export class EventService {
       .where(eq(eventAttendees.id, attendeeId))
       .returning();
 
+    // Invalidar caché de asistentes y del usuario que hizo check-in
+    cacheService.invalidateEventAttendees(eventId);
+    if (attendee.userId) {
+      cacheService.invalidateUserEvents(attendee.userId);
+    }
+
     return updatedAttendee;
   }
 
@@ -1027,6 +1076,12 @@ export class EventService {
       })
       .where(eq(eventAttendees.id, attendeeId))
       .returning();
+
+    // Invalidar caché de asistentes y del usuario
+    cacheService.invalidateEventAttendees(eventId);
+    if (attendee.userId) {
+      cacheService.invalidateUserEvents(attendee.userId);
+    }
 
     return updatedAttendee;
   }
@@ -1231,9 +1286,12 @@ export class EventService {
    * Solo incluye eventos pasados o con check-in realizado
    */
   static async getAttendedEvents(userId: string) {
-    const now = new Date();
+    const cacheKey = CacheKeys.EVENTS_ATTENDED(userId);
 
-    const attendedEvents = await db
+    return cacheService.getOrSet(cacheKey, async () => {
+      const now = new Date();
+
+      const attendedEvents = await db
       .select({
         id: events.id,
         title: events.title,
@@ -1299,71 +1357,76 @@ export class EventService {
       userReviewsSet = new Set(userReviews.map(r => r.eventId));
     }
 
-    // Mapear eventos con estado de reseña (sin queries adicionales)
-    const eventsWithReviewStatus = attendedEvents.map((event) => {
-      const hasReviewed = userReviewsSet.has(event.id);
-      return {
-        ...event,
-        hasReviewed,
-        canReview: event.registrationStatus === 'approved' && event.checkedInAt && !hasReviewed,
-        canDownloadCertificate: event.registrationStatus === 'approved' && !!event.checkedInAt,
-      };
-    });
+      // Mapear eventos con estado de reseña (sin queries adicionales)
+      const eventsWithReviewStatus = attendedEvents.map((event) => {
+        const hasReviewed = userReviewsSet.has(event.id);
+        return {
+          ...event,
+          hasReviewed,
+          canReview: event.registrationStatus === 'approved' && event.checkedInAt && !hasReviewed,
+          canDownloadCertificate: event.registrationStatus === 'approved' && !!event.checkedInAt,
+        };
+      });
 
-    return eventsWithReviewStatus;
+      return eventsWithReviewStatus;
+    }, CacheTTL.SHORT); // Short TTL because hasReviewed can change
   }
 
   /**
    * Obtiene los eventos próximos donde el usuario está registrado (no creados por él)
    */
   static async getRegisteredEvents(userId: string) {
-    const now = new Date();
+    const cacheKey = CacheKeys.EVENTS_REGISTERED(userId);
 
-    const registeredEvents = await db
-      .select({
-        id: events.id,
-        title: events.title,
-        slug: events.slug,
-        shortDescription: events.shortDescription,
-        startDate: events.startDate,
-        endDate: events.endDate,
-        featuredImage: events.featuredImage,
-        city: events.city,
-        address: events.address,
-        country: events.country,
-        locationType: events.locationType,
-        onlineEventUrl: events.onlineEventUrl,
-        status: events.status,
-        capacity: events.capacity,
-        availableTickets: events.availableTickets,
-        isFree: events.isFree,
-        ticketPrice: events.ticketPrice,
-        tags: events.tags,
-        organizerId: events.organizerId,
-        // Datos del registro
-        registrationStatus: eventAttendees.status,
-        registeredAt: eventAttendees.registeredAt,
-        // Organizador
-        organizer: {
-          id: users.id,
-          displayName: users.displayName,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          profileImageUrl: users.profileImageUrl,
-        },
-      })
-      .from(eventAttendees)
-      .innerJoin(events, eq(eventAttendees.eventId, events.id))
-      .leftJoin(users, eq(events.organizerId, users.id))
-      .where(and(
-        eq(eventAttendees.userId, userId),
-        ne(events.organizerId, userId), // No incluir eventos que el usuario organizó
-        gte(events.startDate, now), // Solo eventos futuros
-        ne(events.status, 'cancelled') // No incluir eventos cancelados
-      ))
-      .orderBy(events.startDate);
+    return cacheService.getOrSet(cacheKey, async () => {
+      const now = new Date();
 
-    return registeredEvents;
+      const registeredEvents = await db
+        .select({
+          id: events.id,
+          title: events.title,
+          slug: events.slug,
+          shortDescription: events.shortDescription,
+          startDate: events.startDate,
+          endDate: events.endDate,
+          featuredImage: events.featuredImage,
+          city: events.city,
+          address: events.address,
+          country: events.country,
+          locationType: events.locationType,
+          onlineEventUrl: events.onlineEventUrl,
+          status: events.status,
+          capacity: events.capacity,
+          availableTickets: events.availableTickets,
+          isFree: events.isFree,
+          ticketPrice: events.ticketPrice,
+          tags: events.tags,
+          organizerId: events.organizerId,
+          // Datos del registro
+          registrationStatus: eventAttendees.status,
+          registeredAt: eventAttendees.registeredAt,
+          // Organizador
+          organizer: {
+            id: users.id,
+            displayName: users.displayName,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            profileImageUrl: users.profileImageUrl,
+          },
+        })
+        .from(eventAttendees)
+        .innerJoin(events, eq(eventAttendees.eventId, events.id))
+        .leftJoin(users, eq(events.organizerId, users.id))
+        .where(and(
+          eq(eventAttendees.userId, userId),
+          ne(events.organizerId, userId), // No incluir eventos que el usuario organizó
+          gte(events.startDate, now), // Solo eventos futuros
+          ne(events.status, 'cancelled') // No incluir eventos cancelados
+        ))
+        .orderBy(events.startDate);
+
+      return registeredEvents;
+    }, CacheTTL.MEDIUM);
   }
 
   // ========== CERTIFICADOS ==========

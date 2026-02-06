@@ -28,14 +28,28 @@ export const favoritesController = {
     const favorites = await favoritesService.getFavorites(userId);
 
     // Agrupar por tipo de entidad
-    const grouped = favorites.reduce((acc: any, fav: any) => {
-      if (!acc[fav.entityType]) {
-        acc[fav.entityType] = [];
+    const grouped = favorites.reduce<Record<string, Set<number>>>((acc, fav) => {
+      const entityType = String((fav as any).entityType);
+      const entityId = Number((fav as any).entityId);
+
+      if (!acc[entityType]) {
+        acc[entityType] = new Set<number>();
       }
-      acc[fav.entityType].push(fav.entityId);
+      acc[entityType].add(entityId);
       return acc;
     }, {});
 
-    res.status(200).json(grouped);
+    const result = Object.fromEntries(
+      Object.entries(grouped).map(([key, value]) => [key, Array.from(value)])
+    );
+
+    res.status(200).json(result);
+  },
+
+  // Limpiar duplicados de favoritos del usuario
+  cleanupDuplicates: async (req: Request, res: Response) => {
+    const userId = req.user!.id;
+    const result = await favoritesService.cleanupDuplicates(userId);
+    res.status(200).json({ message: 'Duplicados eliminados', ...result });
   },
 };

@@ -1,6 +1,9 @@
 import { Request, Response } from 'express';
 import { hiringStorage } from '../storage/hiring.js';
 import { z } from 'zod';
+import { db } from '../db.js';
+import { artists } from '../schema.js';
+import { eq } from 'drizzle-orm';
 
 // Esquemas de validación
 const createHiringRequestSchema = z.object({
@@ -323,9 +326,25 @@ export const respondToHiringRequest = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Esta oferta ya no está disponible' });
     }
 
+    // Obtener el artistId del usuario (userId es UUID string, artistId es número)
+    const artistRecord = await db
+      .select({ id: artists.id })
+      .from(artists)
+      .where(eq(artists.userId, userId))
+      .limit(1);
+
+    if (!artistRecord || artistRecord.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Debes tener un perfil de artista para responder a ofertas de trabajo'
+      });
+    }
+
+    const artistId = artistRecord[0].id;
+
     const response = await hiringStorage.createHiringResponse({
       requestId,
-      artistId: parseInt(userId), // TODO: obtener artistId del usuario
+      artistId: artistId, // Usar el ID numérico correcto de la tabla artists
       proposal: data.proposal,
       message: data.message,
       accepted: false, // Por defecto pending

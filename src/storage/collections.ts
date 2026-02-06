@@ -1,6 +1,6 @@
 import { db } from '../db.js';
-import { collections, collectionItems, inspirations, posts, blogPosts, users } from '../schema.js';
-import { eq, and, desc, sql, or } from 'drizzle-orm';
+import { collections, collectionItems, inspirations, posts, blogPosts, users, postMedia } from '../schema.js';
+import { eq, and, desc, sql, inArray } from 'drizzle-orm';
 
 export const collectionsStorage = {
   // ============================================================================
@@ -145,19 +145,49 @@ export const collectionsStorage = {
     console.log(`📊 Regular post IDs:`, regularPostIds);
     console.log(`📊 Blog post IDs:`, blogPostIds);
 
-    // Obtener los posts regulares
+    // Obtener los posts regulares con sus media
     let regularPosts: any[] = [];
     if (regularPostIds.length > 0) {
-      regularPosts = await db
+      // Primero obtener los posts básicos
+      const postsBasic = await db
         .select({
           post: posts,
           author: users,
         })
         .from(posts)
-        .leftJoin(users, eq(posts.userId, users.id))
-        .where(sql`${posts.id} = ANY(${regularPostIds})`);
+        .leftJoin(users, eq(posts.authorId, users.id))
+        .where(inArray(posts.id, regularPostIds));
 
-      console.log(`✅ Found ${regularPosts.length} regular posts`);
+      // Luego obtener los media de cada post
+      const allMedia = await db
+        .select()
+        .from(postMedia)
+        .where(inArray(postMedia.postId, regularPostIds))
+        .orderBy(postMedia.order);
+
+      // Agrupar media por postId
+      const mediaByPost = new Map<number, any[]>();
+      allMedia.forEach(m => {
+        if (!mediaByPost.has(m.postId)) {
+          mediaByPost.set(m.postId, []);
+        }
+        mediaByPost.get(m.postId)!.push({
+          id: m.id,
+          url: m.url,
+          type: m.type,
+          thumbnailUrl: m.thumbnailUrl,
+          order: m.order,
+          metadata: m.metadata,
+        });
+      });
+
+      // Combinar posts con sus media
+      regularPosts = postsBasic.map(p => ({
+        ...p,
+        media: mediaByPost.get(p.post.id) || [],
+      }));
+
+      console.log(`✅ Found ${regularPosts.length} regular posts with media`);
     }
 
     // Obtener los blog posts
@@ -170,10 +200,37 @@ export const collectionsStorage = {
         })
         .from(blogPosts)
         .leftJoin(users, eq(blogPosts.authorId, users.id))
-        .where(sql`${blogPosts.id} = ANY(${blogPostIds})`);
+        .where(inArray(blogPosts.id, blogPostIds));
 
       console.log(`✅ Found ${blogPostsData.length} blog posts`);
     }
+
+    // Helper para construir el nombre del autor
+    const buildAuthorName = (author: any) => {
+      if (!author) return 'Usuario Desconocido';
+      if (author.displayName) return author.displayName;
+      if (author.firstName && author.lastName) return `${author.firstName} ${author.lastName}`;
+      if (author.firstName) return author.firstName;
+      if (author.email) return author.email.split('@')[0];
+      return 'Usuario';
+    };
+
+    // Obtener contadores de inspiración para todos los posts
+    const allPostIds = [...regularPostIds, ...blogPostIds];
+    const inspirationCounts = allPostIds.length > 0
+      ? await db
+          .select({
+            postId: inspirations.postId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(inspirations)
+          .where(inArray(inspirations.postId, allPostIds))
+          .groupBy(inspirations.postId)
+      : [];
+
+    const inspirationCountMap = new Map(
+      inspirationCounts.map(ic => [ic.postId, ic.count])
+    );
 
     // Combinar los resultados manteniendo el orden original
     const result = items.map(item => {
@@ -182,21 +239,36 @@ export const collectionsStorage = {
       if (item.postType === 'post') {
         const found = regularPosts.find(p => p.post.id === item.postId);
         if (found) {
+          const authorWithName = found.author ? {
+            ...found.author,
+            name: buildAuthorName(found.author),
+            avatar: found.author.profileImageUrl,
+          } : null;
+
           postData = {
             ...found.post,
             type: 'post',
-            author: found.author,
-            userId: found.post.userId,
+            author: authorWithName,
+            userId: found.post.authorId,
+            media: found.media || [],
+            inspirationCount: inspirationCountMap.get(item.postId) || 0,
           };
         }
       } else if (item.postType === 'blog') {
         const found = blogPostsData.find(p => p.post.id === item.postId);
         if (found) {
+          const authorWithName = found.author ? {
+            ...found.author,
+            name: buildAuthorName(found.author),
+            avatar: found.author.profileImageUrl,
+          } : null;
+
           postData = {
             ...found.post,
             type: 'blog',
-            author: found.author,
+            author: authorWithName,
             userId: found.post.authorId,
+            inspirationCount: inspirationCountMap.get(item.postId) || 0,
           };
         }
       }
@@ -216,6 +288,9 @@ export const collectionsStorage = {
     }).filter(item => item !== null);
 
     console.log(`✅ Returning ${result.length} posts after filtering`);
+    if (result.length > 0) {
+      console.log(`📸 First post sample:`, JSON.stringify(result[0], null, 2));
+    }
     return result;
   },
 
@@ -248,7 +323,7 @@ export const collectionsStorage = {
         .onConflictDoNothing()
         .returning();
 
-      // Actualizar contador
+      // Actualizar contador de la colección
       if (result.length > 0) {
         await db
           .update(collections)
@@ -257,6 +332,16 @@ export const collectionsStorage = {
             updatedAt: new Date(),
           })
           .where(eq(collections.id, data.collectionId));
+
+        // Actualizar saveCount en blog_posts si es un blog
+        if (data.postType === 'blog') {
+          await db
+            .update(blogPosts)
+            .set({
+              saveCount: sql`${blogPosts.saveCount} + 1`,
+            })
+            .where(eq(blogPosts.id, data.postId));
+        }
       }
 
       return result[0] || null;
@@ -279,7 +364,7 @@ export const collectionsStorage = {
       throw new Error('Collection not found or does not belong to user');
     }
 
-    await db
+    const deleted = await db
       .delete(collectionItems)
       .where(
         and(
@@ -287,16 +372,30 @@ export const collectionsStorage = {
           eq(collectionItems.postId, postId),
           eq(collectionItems.postType, postType)
         )
-      );
+      )
+      .returning();
 
-    // Actualizar contador
-    await db
-      .update(collections)
-      .set({
-        itemCount: sql`GREATEST(0, ${collections.itemCount} - 1)`,
-        updatedAt: new Date(),
-      })
-      .where(eq(collections.id, collectionId));
+    // Solo actualizar contadores si realmente se eliminó algo
+    if (deleted.length > 0) {
+      // Actualizar contador de la colección
+      await db
+        .update(collections)
+        .set({
+          itemCount: sql`GREATEST(0, ${collections.itemCount} - 1)`,
+          updatedAt: new Date(),
+        })
+        .where(eq(collections.id, collectionId));
+
+      // Decrementar saveCount en blog_posts si es un blog
+      if (postType === 'blog') {
+        await db
+          .update(blogPosts)
+          .set({
+            saveCount: sql`GREATEST(0, ${blogPosts.saveCount} - 1)`,
+          })
+          .where(eq(blogPosts.id, postId));
+      }
+    }
   },
 
   /**
@@ -361,31 +460,103 @@ export const collectionsStorage = {
     const regularPostIds = items.filter(item => item.postType === 'post').map(item => item.postId);
     const blogPostIds = items.filter(item => item.postType === 'blog').map(item => item.postId);
 
-    // Obtener los posts regulares
-    let regularPosts: any[] = [];
-    if (regularPostIds.length > 0) {
-      regularPosts = await db
-        .select({
-          post: posts,
-          author: users,
-        })
-        .from(posts)
-        .leftJoin(users, eq(posts.userId, users.id))
-        .where(sql`${posts.id} = ANY(${regularPostIds})`);
-    }
+    // Ejecutar todas las queries en PARALELO para máxima velocidad
+    const [postsBasic, allMedia, blogPostsData] = await Promise.all([
+      // Posts regulares
+      regularPostIds.length > 0
+        ? db
+            .select({
+              post: {
+                id: posts.id,
+                content: posts.content,
+                authorId: posts.authorId,
+              },
+              author: {
+                id: users.id,
+                displayName: users.displayName,
+                firstName: users.firstName,
+                lastName: users.lastName,
+                email: users.email,
+                profileImageUrl: users.profileImageUrl,
+              },
+            })
+            .from(posts)
+            .leftJoin(users, eq(posts.authorId, users.id))
+            .where(inArray(posts.id, regularPostIds))
+        : Promise.resolve([]),
 
-    // Obtener los blog posts
-    let blogPostsData: any[] = [];
-    if (blogPostIds.length > 0) {
-      blogPostsData = await db
-        .select({
-          post: blogPosts,
-          author: users,
-        })
-        .from(blogPosts)
-        .leftJoin(users, eq(blogPosts.authorId, users.id))
-        .where(sql`${blogPosts.id} = ANY(${blogPostIds})`);
-    }
+      // Media de posts
+      regularPostIds.length > 0
+        ? db
+            .select({
+              id: postMedia.id,
+              postId: postMedia.postId,
+              url: postMedia.url,
+              type: postMedia.type,
+              thumbnailUrl: postMedia.thumbnailUrl,
+              order: postMedia.order,
+            })
+            .from(postMedia)
+            .where(inArray(postMedia.postId, regularPostIds))
+            .orderBy(postMedia.order)
+        : Promise.resolve([]),
+
+      // Blog posts
+      blogPostIds.length > 0
+        ? db
+            .select({
+              post: {
+                id: blogPosts.id,
+                title: blogPosts.title,
+                excerpt: blogPosts.excerpt,
+                coverImage: blogPosts.featuredImage,
+                authorId: blogPosts.authorId,
+              },
+              author: {
+                id: users.id,
+                displayName: users.displayName,
+                firstName: users.firstName,
+                lastName: users.lastName,
+                email: users.email,
+                profileImageUrl: users.profileImageUrl,
+              },
+            })
+            .from(blogPosts)
+            .leftJoin(users, eq(blogPosts.authorId, users.id))
+            .where(inArray(blogPosts.id, blogPostIds))
+        : Promise.resolve([]),
+    ]);
+
+    // Agrupar media por postId
+    const mediaByPost = new Map<number, any[]>();
+    allMedia.forEach(m => {
+      if (!mediaByPost.has(m.postId)) {
+        mediaByPost.set(m.postId, []);
+      }
+      mediaByPost.get(m.postId)!.push({
+        id: m.id,
+        url: m.url,
+        type: m.type,
+        thumbnailUrl: m.thumbnailUrl,
+        order: m.order,
+      });
+    });
+
+    // Combinar posts con sus media
+    const regularPosts = postsBasic.map(p => ({
+      ...p,
+      media: mediaByPost.get(p.post.id) || [],
+    }));
+
+    // Helper para construir el nombre del autor
+    const buildAuthorName = (author: any) => {
+      if (!author) return 'Usuario Desconocido';
+      if (author.displayName) return author.displayName;
+      if (author.firstName && author.lastName) return `${author.firstName} ${author.lastName}`;
+      if (author.firstName) return author.firstName;
+      if (author.email) return author.email.split('@')[0];
+      return 'Usuario';
+    };
 
     // Combinar los resultados manteniendo el orden original
     const result = items.map(item => {
@@ -394,20 +565,33 @@ export const collectionsStorage = {
       if (item.postType === 'post') {
         const found = regularPosts.find(p => p.post.id === item.postId);
         if (found) {
+          const authorWithName = found.author ? {
+            ...found.author,
+            name: buildAuthorName(found.author),
+            avatar: found.author.profileImageUrl,
+          } : null;
+
           postData = {
             ...found.post,
             type: 'post',
-            author: found.author,
-            userId: found.post.userId,
+            author: authorWithName,
+            userId: found.post.authorId,
+            media: found.media || [],
           };
         }
       } else if (item.postType === 'blog') {
         const found = blogPostsData.find(p => p.post.id === item.postId);
         if (found) {
+          const authorWithName = found.author ? {
+            ...found.author,
+            name: buildAuthorName(found.author),
+            avatar: found.author.profileImageUrl,
+          } : null;
+
           postData = {
             ...found.post,
             type: 'blog',
-            author: found.author,
+            author: authorWithName,
             userId: found.post.authorId,
           };
         }
@@ -452,7 +636,7 @@ export const collectionsStorage = {
         postType: data.postType || 'post',
         inspirationNote: data.inspirationNote || null,
         tags: data.tags || [],
-        inspirationType: data.inspirationType || null,
+        inspirationType: (data.inspirationType || null) as any,
       })
       .onConflictDoNothing()
       .returning();
@@ -504,15 +688,24 @@ export const collectionsStorage = {
    * Quitar una inspiración
    */
   async removeInspiration(userId: string, postId: number, postType: string = 'post') {
-    await db
-      .delete(inspirations)
-      .where(
-        and(
-          eq(inspirations.userId, userId),
-          eq(inspirations.postId, postId),
-          eq(inspirations.postType, postType)
+    console.log('🗑️ removeInspiration storage - params:', { userId, postId, postType });
+    try {
+      const result = await db
+        .delete(inspirations)
+        .where(
+          and(
+            eq(inspirations.userId, userId),
+            eq(inspirations.postId, postId),
+            eq(inspirations.postType, postType)
+          )
         )
-      );
+        .returning();
+      console.log('✅ removeInspiration result:', result);
+      return result;
+    } catch (error: any) {
+      console.error('❌ removeInspiration error:', error?.message || error);
+      throw error;
+    }
   },
 
   /**

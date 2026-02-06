@@ -1,7 +1,7 @@
 import { relations } from 'drizzle-orm';
 import { pgTable, serial, varchar, text, timestamp, integer, boolean, pgEnum, jsonb } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { users } from '../schema.js';
+import { users } from '../schema/users.js';
 
 export const postTypeEnum = pgEnum('post_type', ['post', 'nota', 'blog']);
 

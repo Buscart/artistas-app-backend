@@ -21,6 +21,9 @@ class ExplorerController {
         tags,
         minPrice,
         maxPrice,
+        discipline, // Subcategoría/disciplina del artista
+        role, // Tipo de artista (músico, pintor, etc.)
+        sortBy, // Ordenamiento: rating, price, newest
         limit = '20',
         offset = '0',
       } = req.query;
@@ -43,6 +46,39 @@ class ExplorerController {
         const categoryId = parseInt(category);
         if (!isNaN(categoryId)) {
           conditions.push(eq(artists.categoryId, categoryId));
+        }
+      }
+
+      // Filtrar por disciplina/subcategoría (busca en tags o artistType)
+      if (discipline && typeof discipline === 'string') {
+        const disciplineTerm = `%${discipline}%`;
+        conditions.push(
+          or(
+            sql`LOWER(${artists.artistType}::text) LIKE LOWER(${disciplineTerm}::text)`,
+            sql`${artists.tags}::text ILIKE ${disciplineTerm}`
+          ) as SQL
+        );
+      }
+
+      // Filtrar por rol/tipo de artista
+      if (role && typeof role === 'string') {
+        const roleTerm = `%${role}%`;
+        conditions.push(sql`LOWER(${artists.artistType}::text) LIKE LOWER(${roleTerm}::text)`);
+      }
+
+      // Filtrar por precio máximo
+      if (maxPrice && typeof maxPrice === 'string') {
+        const maxPriceNum = parseFloat(maxPrice);
+        if (!isNaN(maxPriceNum)) {
+          conditions.push(lte(artists.pricePerHour, maxPriceNum.toString()));
+        }
+      }
+
+      // Filtrar por precio mínimo
+      if (minPrice && typeof minPrice === 'string') {
+        const minPriceNum = parseFloat(minPrice);
+        if (!isNaN(minPriceNum)) {
+          conditions.push(gte(artists.pricePerHour, minPriceNum.toString()));
         }
       }
 
@@ -106,7 +142,11 @@ class ExplorerController {
         .from(users)
         .leftJoin(artists, eq(users.id, artists.userId))
         .where(whereCondition)
-        .orderBy(desc(users.rating))
+        .orderBy(
+          sortBy === 'price' ? artists.pricePerHour :
+          sortBy === 'newest' ? desc(users.createdAt) :
+          desc(users.rating) // default: rating
+        )
         .limit(Number(limit))
         .offset(Number(offset));
 

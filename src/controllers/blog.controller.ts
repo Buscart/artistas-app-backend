@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { db } from '../db.js';
 import { blogPosts, users } from '../schema.js';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { format } from 'date-fns';
 
 interface BlogPostResponse {
@@ -73,7 +73,10 @@ export const getRecentPosts = async (req: Request, res: Response) => {
         likeCount: blogPosts.likeCount,
         commentCount: blogPosts.commentCount,
         shareCount: blogPosts.shareCount,
-        saveCount: blogPosts.saveCount,
+        saveCount: sql<number>`(
+          SELECT COUNT(*)::int FROM collection_items ci
+          WHERE ci.post_id = ${blogPosts.id} AND ci.post_type = 'blog'
+        )`,
         
         // Visibilidad y estado
         visibility: blogPosts.visibility,

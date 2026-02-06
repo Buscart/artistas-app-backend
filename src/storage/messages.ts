@@ -19,6 +19,7 @@ export class MessageStorage {
         content: messages.content,
         senderId: messages.senderId,
         receiverId: messages.receiverId,
+        sharedPostId: messages.sharedPostId,
         isRead: messages.isRead,
         createdAt: messages.createdAt,
         sender: senderAlias,
@@ -70,6 +71,7 @@ export class MessageStorage {
         content: messages.content,
         senderId: messages.senderId,
         receiverId: messages.receiverId,
+        sharedPostId: messages.sharedPostId,
         isRead: messages.isRead,
         createdAt: messages.createdAt,
         sender: senderAlias,
@@ -91,7 +93,7 @@ export class MessageStorage {
 
     const results = await finalQuery;
 
-    return results.map((result: { id: number; content: string; senderId: string; receiverId: string; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
+    return results.map((result: { id: number; content: string; senderId: string; receiverId: string; sharedPostId: number | null; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
       ...result,
       sender: result.sender || {
         id: '',
@@ -157,6 +159,7 @@ export class MessageStorage {
         content: messages.content,
         senderId: messages.senderId,
         receiverId: messages.receiverId,
+        sharedPostId: messages.sharedPostId,
         isRead: messages.isRead,
         createdAt: messages.createdAt,
         sender: senderAlias,
@@ -168,7 +171,7 @@ export class MessageStorage {
       .where(or(eq(messages.senderId, userId), eq(messages.receiverId, userId)))
       .orderBy(asc(messages.createdAt));
 
-    return results.map((result: { id: number; content: string; senderId: string; receiverId: string; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
+    return results.map((result: { id: number; content: string; senderId: string; receiverId: string; sharedPostId: number | null; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
       ...result,
       sender: result.sender || {
         id: '',
@@ -234,6 +237,7 @@ export class MessageStorage {
         content: messages.content,
         senderId: messages.senderId,
         receiverId: messages.receiverId,
+        sharedPostId: messages.sharedPostId,
         isRead: messages.isRead,
         createdAt: messages.createdAt,
         sender: senderAlias,
@@ -250,7 +254,7 @@ export class MessageStorage {
       )
       .orderBy(asc(messages.createdAt));
 
-    return results.map((result: { id: number; content: string; senderId: string; receiverId: string; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
+    return results.map((result: { id: number; content: string; senderId: string; receiverId: string; sharedPostId: number | null; isRead: boolean | null; createdAt: Date | null; sender: typeof users.$inferSelect | null; receiver: typeof users.$inferSelect | null }) => ({
       ...result,
       sender: result.sender || {
         id: '',

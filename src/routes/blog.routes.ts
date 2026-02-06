@@ -70,7 +70,10 @@ blogRoutes.get('/', readUserRateLimit, asyncHandler(async (req, res) => {
       likeCount: blogPosts.likeCount,
       commentCount: blogPosts.commentCount,
       shareCount: blogPosts.shareCount,
-      saveCount: blogPosts.saveCount,
+      saveCount: sql<number>`(
+        SELECT COUNT(*)::int FROM collection_items ci
+        WHERE ci.post_id = ${blogPosts.id} AND ci.post_type = 'blog'
+      )`,
       visibility: blogPosts.visibility,
       allowComments: blogPosts.allowComments,
       isFeatured: blogPosts.isFeatured,
@@ -203,7 +206,10 @@ blogRoutes.get('/user/:userId', readUserRateLimit, asyncHandler(async (req, res)
       likeCount: blogPosts.likeCount,
       commentCount: blogPosts.commentCount,
       shareCount: blogPosts.shareCount,
-      saveCount: blogPosts.saveCount,
+      saveCount: sql<number>`(
+        SELECT COUNT(*)::int FROM collection_items ci
+        WHERE ci.post_id = ${blogPosts.id} AND ci.post_type = 'blog'
+      )`,
       visibility: blogPosts.visibility,
       allowComments: blogPosts.allowComments,
       isFeatured: blogPosts.isFeatured,
@@ -279,7 +285,10 @@ blogRoutes.get('/:id', readUserRateLimit, asyncHandler(async (req, res) => {
       likeCount: blogPosts.likeCount,
       commentCount: blogPosts.commentCount,
       shareCount: blogPosts.shareCount,
-      saveCount: blogPosts.saveCount,
+      saveCount: sql<number>`(
+        SELECT COUNT(*)::int FROM collection_items ci
+        WHERE ci.post_id = ${blogPosts.id} AND ci.post_type = 'blog'
+      )`,
       visibility: blogPosts.visibility,
       allowComments: blogPosts.allowComments,
       isFeatured: blogPosts.isFeatured,
