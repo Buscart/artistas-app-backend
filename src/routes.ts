@@ -2,8 +2,8 @@ import type { Express, Router, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage/index.js";
-import { setupAuth, isAuthenticated } from "./replitAuth.js";
 import { artistsController } from "./controllers/artists.controller.js";
+import { auth } from "./config/firebase.js";
 import { 
   users,
   artists,
@@ -133,8 +133,21 @@ import type { ParsedQs } from 'qs';
 const wsConnections = new Map<string, WebSocket>();
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware
-  await setupAuth(app);
+  // Firebase Auth middleware
+  const requireAuth = async (req: any, res: any, next: any) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return res.status(401).json({ error: 'No token provided' });
+    }
+    
+    try {
+      const decoded = await auth.verifyIdToken(token);
+      req.user = decoded;
+      next();
+    } catch (error) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+  };
 
   // Initialize default categories
   try {
@@ -159,7 +172,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   }
 
   // Auth routes
-  app.post('/api/hiring/requests', isAuthenticated, async (req: any, res) => {
+  app.post('/api/hiring/requests', requireAuth, async (req: any, res) => {
     try {
       const request = await storage.hiring.createHiringRequest({
         ...req.body,
@@ -291,7 +304,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/blog', isAuthenticated, async (req: any, res) => {
+  app.post('/api/blog', requireAuth, async (req: any, res) => {
     const post = {
       title: req.body.title,
       content: req.body.content,
@@ -314,7 +327,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reviews routes
-  app.post('/api/reviews', isAuthenticated, async (req: any, res) => {
+  app.post('/api/reviews', requireAuth, async (req: any, res) => {
     try {
       const { targetType, targetId, score, reason } = req.body;
       const userId = req.user.id;
@@ -347,7 +360,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Hiring responses routes
-  app.post('/api/hiring/responses', isAuthenticated, async (req: Request, res: Response) => {
+  app.post('/api/hiring/responses', requireAuth, async (req: Request, res: Response) => {
     const user = req.user as { id: string };
     try {
       const { requestId: rawRequestId, message, proposal } = req.body;
@@ -392,7 +405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Messages routes
-  app.get('/api/messages', isAuthenticated, async (req: any, res) => {
+  app.get('/api/messages', requireAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const messages = await storage.getUserMessages(userId);
@@ -403,7 +416,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/messages/threads', isAuthenticated, async (req: any, res) => {
+  app.get('/api/messages/threads', requireAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const allMessages = await storage.getUserMessages(userId);
@@ -473,7 +486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/messages/conversation/:userId', isAuthenticated, async (req: any, res) => {
+  app.get('/api/messages/conversation/:userId', requireAuth, async (req: any, res) => {
     try {
       const userId1 = req.user.claims.sub;
       const userId2 = req.params.userId;
@@ -486,7 +499,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/messages', isAuthenticated, async (req: any, res) => {
+  app.post('/api/messages', requireAuth, async (req: any, res) => {
     try {
       const senderId = req.user.claims.sub;
       const messageData = insertMessageSchema.parse({ ...req.body, senderId });

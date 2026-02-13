@@ -20,8 +20,8 @@ import cookieParser from 'cookie-parser';
 import { logger } from './utils/logger.js';
 import { validateEnv } from './utils/validateEnv.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.middleware.js';
-import swaggerUi from 'swagger-ui-express';
-import { swaggerSpec } from './config/swagger.js';
+// import swaggerUi from 'swagger-ui-express';
+// import { swaggerSpec } from './config/swagger.js';
 
 // Validar variables de entorno al inicio
 try {
@@ -351,12 +351,12 @@ app.use('/api', apiLimiter);
 
 // Documentación Swagger
 if (process.env.NODE_ENV !== 'production') {
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-    explorer: true,
-    customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'BuscartPro API Docs',
-  }));
-  logger.info('Swagger UI disponible en /api-docs', undefined, 'Swagger');
+  // app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  //   explorer: true,
+  //   customCss: '.swagger-ui .topbar { display: none }',
+  //   customSiteTitle: 'BuscartPro API Docs',
+  // }));
+  // logger.info('Swagger UI disponible en /api-docs', undefined, 'Swagger');
 }
 
 // Configuración de rutas
