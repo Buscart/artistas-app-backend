@@ -385,6 +385,10 @@ protectedRoutes.get('/profile', userController.getProfile as RouteHandler);
 protectedRoutes.put('/profile', userController.updateProfile as RouteHandler);
 protectedRoutes.patch('/profile/type', userController.updateUserType as RouteHandler);
 
+// Rutas de usuario autenticado (/users/me)
+protectedRoutes.get('/users/me', userController.getProfile as RouteHandler);
+protectedRoutes.patch('/users/me', userController.updateProfile as RouteHandler);
+
 // Rutas de artista (perfil del artista del usuario autenticado)
 protectedRoutes.get('/artist/me', (async (req: any, res: Response) => {
   try {

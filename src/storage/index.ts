@@ -118,6 +118,7 @@ export class DatabaseStorage implements IStorage {
       firstName: string | null;
       lastName: string | null;
       profileImageUrl: string | null;
+      coverImageUrl: string | null;
       userType: 'general' | 'artist' | 'company';
       bio: string | null;
       city: string | null;
@@ -144,6 +145,7 @@ export class DatabaseStorage implements IStorage {
       if (user.firstName !== undefined) updateData.firstName = user.firstName;
       if (user.lastName !== undefined) updateData.lastName = user.lastName;
       if (user.profileImageUrl !== undefined) updateData.profileImageUrl = user.profileImageUrl;
+      if (user.coverImageUrl !== undefined) updateData.coverImageUrl = user.coverImageUrl;
       if (user.userType !== undefined) updateData.userType = user.userType;
       if (user.bio !== undefined) updateData.bio = user.bio;
       if (user.city !== undefined) updateData.city = user.city;

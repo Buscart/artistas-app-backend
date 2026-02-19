@@ -334,7 +334,7 @@ Incluye materiales digitales y acceso a recursos exclusivos.',
       {
         userId: createdUserIds[3],
         rating: 4,
-        title: 'Valió cada peso',
+        title: 'Valió la pena',
         comment: 'Contenido de calidad, buenos materiales y excelente atención. Definitivamente asistiré a más eventos de BuscArt.'
       },
       {

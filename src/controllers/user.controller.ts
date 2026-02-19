@@ -60,6 +60,7 @@ export const userController = {
         lastName,
         username,
         profileImageUrl,
+        coverImageUrl,
         bio,
         city,
         address,
@@ -85,6 +86,7 @@ export const userController = {
       if (lastName !== undefined && lastName !== null) updateData.lastName = lastName;
       if (username !== undefined && username !== null) updateData.username = username;
       if (profileImageUrl !== undefined) updateData.profileImageUrl = profileImageUrl;
+      if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl;
       if (bio !== undefined) updateData.bio = bio;
       if (city !== undefined) updateData.city = city;
       if (address !== undefined) updateData.address = address;
