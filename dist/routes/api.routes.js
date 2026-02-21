@@ -1,24 +1,24 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 // Importar controladores de artista
-import { getFeatured as getFeaturedArtists, getAll as getAllArtists, getById as getArtistById } from '../controllers/artist.controller.js';
+import { getFeatured as getFeaturedArtists, getAll as getAllArtists, getById as getArtistById } from '../controllers/artist.controller.ts';
 // Los controladores de eventos ahora se importan desde el módulo events/
 // Importar controladores del blog
-import { getRecentPosts as getBlogRecentPosts } from '../controllers/blog.controller.js';
+import { getRecentPosts as getBlogRecentPosts } from '../controllers/blog.controller.ts';
 // Importar controladores de usuario
-import { userController } from '../controllers/user.controller.js';
+import { userController } from '../controllers/user.controller.ts';
 // Importar controladores de elementos destacados
-import * as featuredController from '../controllers/featured.controller.js';
+import * as featuredController from '../controllers/featured.controller.ts';
 // Importar controlador del dashboard
-import { dashboardController } from '../controllers/dashboard.controller.js';
+import { dashboardController } from '../controllers/dashboard.controller.ts';
 // Importar rutas del dashboard (comentado - conflicto con activityRoutes que ya maneja /dashboard/stats)
 // import dashboardRoutes from './dashboard.routes.js';
 // Importar controladores de ofertas
-import { offerController } from '../controllers/offer.controller.js';
+import { offerController } from '../controllers/offer.controller.ts';
 // Importar controladores de perfiles
-import { profileController } from '../controllers/profile.controller.js';
-// Importar rutas de posts
-import postRoutes from './posts.routes.js';
+import { profileController } from '../controllers/profile.controller.ts';
+// Importar rutas del blog
+import blogRoutes from './blog.routes.ts';
 // Importar rutas sociales (usuarios sugeridos, tendencias, follows)
 import socialRoutes from './social.routes.js';
 // Importar rutas de contratos y cotizaciones
@@ -55,7 +55,6 @@ import onboardingRoutes from './onboarding.routes.js';
 // DISABLED: import artistHierarchyRoutes from './artist-hierarchy.routes.js'; - Controller has complex Drizzle errors
 import documentsRoutes from './documents.routes.js';
 import highlightPhotosRoutes from './highlight-photos.routes.js';
-import blogRoutes from './blog.routes.js';
 import servicesRoutes from './services.routes.js';
 import storeRoutes from './store.routes.js';
 import campaignsRoutes from './campaigns.routes.js';
@@ -212,8 +211,8 @@ v1.post('/featured', featuredController.createFeaturedItem);
 v1.put('/featured/:id', featuredController.updateFeaturedItem);
 v1.delete('/featured/:id', featuredController.deleteFeaturedItem);
 // Rutas de perfil (públicas eliminadas; usar protectedRoutes más abajo)
-// Rutas de posts
-v1.use('/posts', postRoutes);
+// Rutas del blog
+v1.use('/posts', blogRoutes);
 // Rutas sociales
 v1.use('/', socialRoutes);
 // Rutas de explorer (públicas - antes del middleware)
@@ -295,6 +294,9 @@ v1.use('/upload', uploadRoutes);
 protectedRoutes.get('/profile', userController.getProfile);
 protectedRoutes.put('/profile', userController.updateProfile);
 protectedRoutes.patch('/profile/type', userController.updateUserType);
+// Rutas de usuario autenticado (/users/me)
+protectedRoutes.get('/users/me', userController.getProfile);
+protectedRoutes.patch('/users/me', userController.updateProfile);
 // Rutas de artista (perfil del artista del usuario autenticado)
 protectedRoutes.get('/artist/me', (async (req, res) => {
     try {

@@ -17,6 +17,8 @@ export class MessageStorage {
             sharedPostId: messages.sharedPostId,
             isRead: messages.isRead,
             createdAt: messages.createdAt,
+            updatedAt: messages.updatedAt,
+            messageType: messages.messageType,
             sender: senderAlias,
             receiver: receiverAlias
         })
@@ -68,6 +70,8 @@ export class MessageStorage {
             sharedPostId: messages.sharedPostId,
             isRead: messages.isRead,
             createdAt: messages.createdAt,
+            updatedAt: messages.updatedAt,
+            messageType: messages.messageType,
             sender: senderAlias,
             receiver: receiverAlias
         })
@@ -91,8 +95,8 @@ export class MessageStorage {
             sharedPostId: result.sharedPostId,
             isRead: result.isRead,
             createdAt: result.createdAt,
-            updatedAt: new Date(),
-            messageType: result.messageType || 'text',
+            updatedAt: result.updatedAt,
+            messageType: result.messageType ?? 'text',
             sender: result.sender || {
                 id: '',
                 email: '',
@@ -155,6 +159,8 @@ export class MessageStorage {
             sharedPostId: messages.sharedPostId,
             isRead: messages.isRead,
             createdAt: messages.createdAt,
+            updatedAt: messages.updatedAt,
+            messageType: messages.messageType,
             sender: senderAlias,
             receiver: receiverAlias
         })
@@ -171,8 +177,8 @@ export class MessageStorage {
             sharedPostId: result.sharedPostId,
             isRead: result.isRead,
             createdAt: result.createdAt,
-            updatedAt: new Date(),
-            messageType: result.messageType || 'text',
+            updatedAt: result.updatedAt,
+            messageType: result.messageType ?? 'text',
             sender: result.sender || {
                 id: '',
                 email: '',
@@ -235,6 +241,8 @@ export class MessageStorage {
             sharedPostId: messages.sharedPostId,
             isRead: messages.isRead,
             createdAt: messages.createdAt,
+            updatedAt: messages.updatedAt,
+            messageType: messages.messageType,
             sender: senderAlias,
             receiver: receiverAlias
         })

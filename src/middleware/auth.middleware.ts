@@ -153,7 +153,7 @@ export const authMiddleware = async (
         // Usuario autenticado en Firebase pero no existe en nuestra BD
         console.log('⚠️ Usuario autenticado pero no registrado en BD, creando automáticamente:', decodedToken.uid);
         
-        // Crear el usuario automáticamente
+        // Crear el usuario automáticamente (ON CONFLICT para evitar race condition)
         try {
           const newUser = await db.insert(users).values({
             id: decodedToken.uid,
@@ -163,6 +163,9 @@ export const authMiddleware = async (
             userType: 'general',
             createdAt: new Date(),
             updatedAt: new Date()
+          }).onConflictDoUpdate({
+            target: users.id,
+            set: { updatedAt: new Date() }
           }).returning();
           
           console.log('✅ Usuario creado automáticamente en BD');

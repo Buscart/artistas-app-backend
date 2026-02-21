@@ -792,4 +792,31 @@ portfolioRoutes.post('/products', authMiddleware, asyncHandler(async (req, res) 
   });
 }));
 
+// GET /api/v1/portfolio/me - Alias para obtener portfolio del usuario autenticado
+portfolioRoutes.get('/me', authMiddleware, readUserRateLimit, asyncHandler(async (req, res) => {
+  const userId = req.user!.id;
+
+  const [photos, videos] = await Promise.all([
+    // Gallery items (fotos)
+    db.select()
+      .from(gallery)
+      .where(eq(gallery.userId, userId))
+      .orderBy(gallery.createdAt),
+
+    // Featured items (videos, enlaces)
+    db.select()
+      .from(featuredItems)
+      .where(eq(featuredItems.userId, userId))
+      .orderBy(featuredItems.createdAt),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      photos,
+      videos,
+    },
+  });
+}));
+
 export default portfolioRoutes;

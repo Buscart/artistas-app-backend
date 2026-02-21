@@ -49,7 +49,7 @@ export const userController = {
             const userId = req.user?.id;
             if (!userId)
                 return res.status(401).json({ message: 'No autenticado' });
-            const { email, firstName, lastName, username, profileImageUrl, bio, city, address, isVerified, userType, onboardingCompleted, } = req.body || {};
+            const { email, firstName, lastName, username, profileImageUrl, coverImageUrl, bio, city, address, isVerified, userType, onboardingCompleted, } = req.body || {};
             // Validar userType opcionalmente
             let safeUserType = undefined;
             if (userType !== undefined) {
@@ -71,6 +71,8 @@ export const userController = {
                 updateData.username = username;
             if (profileImageUrl !== undefined)
                 updateData.profileImageUrl = profileImageUrl;
+            if (coverImageUrl !== undefined)
+                updateData.coverImageUrl = coverImageUrl;
             if (bio !== undefined)
                 updateData.bio = bio;
             if (city !== undefined)

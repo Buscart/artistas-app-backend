@@ -77,6 +77,8 @@ export class DatabaseStorage {
                 updateData.lastName = user.lastName;
             if (user.profileImageUrl !== undefined)
                 updateData.profileImageUrl = user.profileImageUrl;
+            if (user.coverImageUrl !== undefined)
+                updateData.coverImageUrl = user.coverImageUrl;
             if (user.userType !== undefined)
                 updateData.userType = user.userType;
             if (user.bio !== undefined)

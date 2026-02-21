@@ -10,9 +10,6 @@ import {
 
 // Los controladores de eventos ahora se importan desde el módulo events/
 
-// Importar controladores del blog
-import { getRecentPosts as getBlogRecentPosts } from '../controllers/blog.controller.js';
-
 // Importar controladores de usuario
 import { userController } from '../controllers/user.controller.js';
 
@@ -31,8 +28,8 @@ import { offerController } from '../controllers/offer.controller.js';
 // Importar controladores de perfiles
 import { profileController } from '../controllers/profile.controller.js';
 
-// Importar rutas del blog
-import blogRoutes from './blog.routes.js';
+// Importar rutas de preferencias
+import preferencesRoutes from './preferences.routes.js';
 
 // Importar rutas sociales (usuarios sugeridos, tendencias, follows)
 import socialRoutes from './social.routes.js';
@@ -42,9 +39,6 @@ import savedItemsRoutes from './saved-items.routes.js';
 
 // Importar rutas de contratos y cotizaciones
 import contractsRoutes from './contracts.routes.js';
-
-// Importar rutas de preferencias
-import preferencesRoutes from './preferences.routes.js';
 
 // DISABLED: Importar rutas de actividad - Missing service dependencies
 // import activityRoutes from './activity.routes.js';
@@ -96,6 +90,7 @@ import favoritesRoutes from './favorites.routes.js';
 import dislikedItemsRoutes from './dislikedItems.routes.js';
 import uploadRoutes from './upload.routes.js';
 import collectionsRoutes from './collections.routes.js';
+import blogRoutes from './blog.routes.js';
 import { venuesController } from '../controllers/venues.controller.js';
 import { storage } from '../storage/index.js';
 
@@ -237,7 +232,6 @@ router.get('/v1/artists/:id', getArtistById);
 
 // Ruta pública de venues (explorador) - DEBE estar en router, no en v1
 router.get('/v1/venues', venuesController.getAllVenues);
-router.get('/v1/blog', getBlogRecentPosts);
 // Listado de categorías
 router.get('/v1/categories', async (_req: Request, res: Response) => {
   try {
@@ -266,9 +260,6 @@ v1.put('/featured/:id', featuredController.updateFeaturedItem as RouteHandler);
 v1.delete('/featured/:id', featuredController.deleteFeaturedItem as RouteHandler);
 
 // Rutas de perfil (públicas eliminadas; usar protectedRoutes más abajo)
-
-// Rutas del blog
-v1.use('/posts', blogRoutes);
 
 // Rutas sociales
 v1.use('/', socialRoutes);
@@ -347,9 +338,6 @@ v1.use('/documents', documentsRoutes);
 // Rutas de fotos destacadas (highlight photos)
 v1.use('/highlight-photos', highlightPhotosRoutes);
 
-// Rutas de blog (parcialmente protegidas)
-v1.use('/blog', blogRoutes);
-
 // Rutas de servicios (parcialmente protegidas)
 v1.use('/services', servicesRoutes);
 
@@ -376,6 +364,10 @@ v1.use('/disliked-items', authMiddleware, dislikedItemsRoutes);
 
 // Rutas de subida de archivos (protegidas)
 v1.use('/upload', uploadRoutes);
+
+// Rutas de blog/posts (público + protegidas)
+v1.use('/blog', blogRoutes);
+v1.use('/posts', blogRoutes); // Alias para compatibilidad con post.service.ts
 
 // Nota: Las rutas de eventos están definidas en events.routes.ts
 // Las rutas duplicadas fueron removidas para evitar conflictos
@@ -627,6 +619,9 @@ v1.patch('/offers/:id/status', offerController.updateStatus as RouteHandler);
 v1.get('/profiles', profileController.getAll as RouteHandler);
 v1.get('/profiles/:id', profileController.getById as RouteHandler);
 v1.get('/profiles/:id/reviews', profileController.getReviews as RouteHandler);
+
+// Montar profile routes para /me/reviews
+v1.use('/profile', profileRoutes);
 
 // Montar rutas protegidas en v1
 v1.use(protectedRoutes);

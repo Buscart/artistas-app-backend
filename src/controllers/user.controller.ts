@@ -1,13 +1,47 @@
 import { Request, Response } from 'express';
 import { storage } from '../storage/index.js';
+import { auth } from '../config/firebase.js';
+import { users, artists, companies, reviews, categories, disciplines, roles, specializations, gallery, featuredItems } from '../schema.js';
+import { eq, and, or, desc, sql } from 'drizzle-orm';
 
 export const userController = {
   async getProfile(req: any, res: Response) {
     try {
       const userId = req.user?.id;
       if (!userId) return res.status(401).json({ message: 'No autenticado' });
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+      
+      let user = await storage.getUser(userId);
+      
+      // Si no existe en PostgreSQL, crearlo desde Firebase
+      if (!user) {
+        console.log('🔄 Usuario no encontrado en BD, sincronizando desde Firebase:', userId);
+        
+        try {
+          // Obtener usuario desde Firebase
+          const firebaseUser: any = await auth.getUser(userId);
+          if (!firebaseUser) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+          }
+          
+          // Crear usuario en PostgreSQL con datos básicos de Firebase
+          const newUser = await storage.upsertUser({
+            id: firebaseUser.uid,
+            email: firebaseUser.email || '',
+            displayName: firebaseUser.displayName || firebaseUser.email || '',
+            profileImageUrl: firebaseUser.photoURL || null,
+            isVerified: true,
+            userType: 'general', // Por defecto, luego puede actualizar a 'artist'
+            onboardingCompleted: false,
+          } as any);
+          
+          console.log('✅ Usuario sincronizado correctamente:', newUser.id);
+          user = newUser;
+        } catch (firebaseError) {
+          console.error('❌ Error al sincronizar usuario desde Firebase:', firebaseError);
+          return res.status(500).json({ message: 'Error al sincronizar usuario' });
+        }
+      }
+      
       return res.json(user);
     } catch (e) {
       console.error('getProfile error:', e);
