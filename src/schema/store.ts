@@ -16,6 +16,7 @@ export const services = pgTable('services', {
   category: varchar('category', { length: 100 }),
   icon: varchar('icon', { length: 100 }).default('brush-outline'),
   deliveryTag: varchar('deliverytag', { length: 50 }),
+  unit: varchar('unit', { length: 100 }),
   packageType: varchar('packagetype', { length: 20 }).default('single'),
   includedCount: integer('includedcount').default(1),
   deliveryDays: integer('deliverydays').default(0),

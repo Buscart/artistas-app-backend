@@ -99,6 +99,7 @@ export const userController = {
         coverImageUrl,
         bio,
         city,
+        schedule,
         address,
         isVerified,
         userType,
@@ -140,6 +141,7 @@ export const userController = {
       if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl;
       if (bio !== undefined) updateData.bio = bio;
       if (city !== undefined) updateData.city = city;
+      if (schedule !== undefined) updateData.schedule = schedule;
       if (address !== undefined) updateData.address = address;
       if (isVerified !== undefined) updateData.isVerified = isVerified;
       if (safeUserType !== undefined) updateData.userType = safeUserType;

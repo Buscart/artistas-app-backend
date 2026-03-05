@@ -42,6 +42,7 @@ export const users = pgTable('users', {
   // Campos adicionales de perfil
   username: varchar('username', { length: 30 }).unique(),
   shortBio: varchar('short_bio', { length: 250 }),
+  schedule: varchar('schedule', { length: 255 }),
   interestedCategories: integer('interested_categories').array(),
   interestedTags: text('interested_tags').array(),
 

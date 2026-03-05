@@ -109,6 +109,7 @@ class ExplorerController {
           displayName: users.displayName,
           profileImageUrl: users.profileImageUrl,
           city: users.city,
+          schedule: users.schedule,
           bio: users.bio,
           description: artists.description,
           rating: users.rating,
@@ -632,11 +633,47 @@ class ExplorerController {
         return res.status(401).json({ message: 'Usuario no autenticado' });
       }
 
-      const userServices = await db
-        .select()
-        .from(services)
-        .where(eq(services.userId, userId))
-        .orderBy(desc(services.createdAt));
+      // Intentar obtener servicios, manejando posible error de columna faltante
+      let userServices;
+      try {
+        userServices = await db
+          .select()
+          .from(services)
+          .where(eq(services.userId, userId))
+          .orderBy(desc(services.createdAt));
+      } catch (dbError: any) {
+        // Si el error es por la columna unit, hacer una consulta sin esa columna
+        if (dbError.message && dbError.message.includes('unit')) {
+          console.warn('Columna unit no existe, usando consulta alternativa');
+          userServices = await db
+            .select({
+              id: services.id,
+              userId: services.userId,
+              companyId: services.companyId,
+              name: services.name,
+              description: services.description,
+              price: services.price,
+              currency: services.currency,
+              duration: services.duration,
+              category: services.category,
+              icon: services.icon,
+              deliveryTag: services.deliveryTag,
+              packageType: services.packageType,
+              includedCount: services.includedCount,
+              deliveryDays: services.deliveryDays,
+              weeklyFrequency: services.weeklyFrequency,
+              images: services.images,
+              isActive: services.isActive,
+              createdAt: services.createdAt,
+              updatedAt: services.updatedAt,
+            })
+            .from(services)
+            .where(eq(services.userId, userId))
+            .orderBy(desc(services.createdAt));
+        } else {
+          throw dbError;
+        }
+      }
 
       res.status(200).json({ success: true, data: userServices });
     } catch (error: any) {
@@ -660,9 +697,9 @@ class ExplorerController {
         return res.status(401).json({ message: 'Usuario no autenticado' });
       }
 
-      const { 
+      const {
         name, description, price, currency, duration, category, images,
-        icon, deliveryTag, packageType, includedCount, deliveryDays, weeklyFrequency,
+        icon, deliveryTag, unit, packageType, includedCount, deliveryDays, weeklyFrequency,
       } = req.body;
 
       if (!name) {
@@ -681,6 +718,7 @@ class ExplorerController {
           category: category || null,
           icon: icon || 'brush-outline',
           deliveryTag: deliveryTag || null,
+          unit: unit || null,
           packageType: packageType || 'single',
           includedCount: includedCount || 1,
           deliveryDays: deliveryDays || 0,
@@ -728,9 +766,9 @@ class ExplorerController {
       }
 
       const updateData: any = {};
-      const { 
+      const {
         name, description, price, currency, duration, category, images, isActive,
-        icon, deliveryTag, packageType, includedCount, deliveryDays, weeklyFrequency,
+        icon, deliveryTag, unit, packageType, includedCount, deliveryDays, weeklyFrequency,
       } = req.body;
 
       if (name !== undefined) updateData.name = name;
@@ -741,6 +779,7 @@ class ExplorerController {
       if (category !== undefined) updateData.category = category;
       if (icon !== undefined) updateData.icon = icon;
       if (deliveryTag !== undefined) updateData.deliveryTag = deliveryTag;
+      if (unit !== undefined) updateData.unit = unit;
       if (packageType !== undefined) updateData.packageType = packageType;
       if (includedCount !== undefined) updateData.includedCount = includedCount;
       if (deliveryDays !== undefined) updateData.deliveryDays = deliveryDays;
@@ -818,11 +857,47 @@ class ExplorerController {
         return res.status(400).json({ message: 'ID de usuario requerido' });
       }
 
-      const userServices = await db
-        .select()
-        .from(services)
-        .where(and(eq(services.userId, userId), isNull(services.companyId)))
-        .orderBy(desc(services.createdAt));
+      // Intentar obtener servicios, manejando posible error de columna faltante
+      let userServices;
+      try {
+        userServices = await db
+          .select()
+          .from(services)
+          .where(and(eq(services.userId, userId), isNull(services.companyId)))
+          .orderBy(desc(services.createdAt));
+      } catch (dbError: any) {
+        // Si el error es por la columna unit, hacer una consulta sin esa columna
+        if (dbError.message && dbError.message.includes('unit')) {
+          console.warn('Columna unit no existe, usando consulta alternativa para getUserServicesById');
+          userServices = await db
+            .select({
+              id: services.id,
+              userId: services.userId,
+              companyId: services.companyId,
+              name: services.name,
+              description: services.description,
+              price: services.price,
+              currency: services.currency,
+              duration: services.duration,
+              category: services.category,
+              icon: services.icon,
+              deliveryTag: services.deliveryTag,
+              packageType: services.packageType,
+              includedCount: services.includedCount,
+              deliveryDays: services.deliveryDays,
+              weeklyFrequency: services.weeklyFrequency,
+              images: services.images,
+              isActive: services.isActive,
+              createdAt: services.createdAt,
+              updatedAt: services.updatedAt,
+            })
+            .from(services)
+            .where(and(eq(services.userId, userId), isNull(services.companyId)))
+            .orderBy(desc(services.createdAt));
+        } else {
+          throw dbError;
+        }
+      }
 
       res.status(200).json({ success: true, data: userServices });
     } catch (error: any) {

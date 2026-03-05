@@ -43,6 +43,20 @@ CREATE INDEX IF NOT EXISTS idx_services_category ON services(category);
 CREATE INDEX IF NOT EXISTS idx_services_active ON services(is_active);
 
 -- ============================================================================
+-- 2b. AGREGAR COLUMNAS FALTANTES A SERVICES
+-- ============================================================================
+
+ALTER TABLE services ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'COP';
+ALTER TABLE services ADD COLUMN IF NOT EXISTS icon VARCHAR(100) DEFAULT 'brush-outline';
+ALTER TABLE services ADD COLUMN IF NOT EXISTS delivery_tag VARCHAR(50);
+ALTER TABLE services ADD COLUMN IF NOT EXISTS unit VARCHAR(100);
+ALTER TABLE services ADD COLUMN IF NOT EXISTS package_type VARCHAR(20) DEFAULT 'single';
+ALTER TABLE services ADD COLUMN IF NOT EXISTS included_count INTEGER DEFAULT 1;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS delivery_days INTEGER DEFAULT 0;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS weekly_frequency INTEGER;
+ALTER TABLE services ADD COLUMN IF NOT EXISTS company_id INTEGER;
+
+-- ============================================================================
 -- 3. EXPANDIR TABLA EVENTS PARA EXPLORADOR
 -- ============================================================================
 
