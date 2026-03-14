@@ -9,8 +9,7 @@ const eventsRoutes = Router();
  * GET /api/v1/events/search
  * Buscar eventos por nombre/descripción
  */
-import ExplorerController from '../controllers/explorer.controller.js';
-eventsRoutes.get('/search', ExplorerController.searchEvents);
+eventsRoutes.get('/search', EventController.searchEvents);
 
 /**
  * GET /api/v1/events

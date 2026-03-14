@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 import { artists, users, categories, disciplines, roles, specializations } from '../schema.js';
-import { eq, and, isNull, sql, gte, lte, isNotNull } from 'drizzle-orm';
+import { eq, and, isNull, sql, gte, lte, isNotNull, or, ilike } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -51,6 +51,7 @@ export class ArtistStorage {
   async getArtists(params?: {
     limit?: number;
     offset?: number;
+    query?: string;
     category?: string;
     city?: string;
     priceMin?: number;
@@ -110,6 +111,18 @@ export class ArtistStorage {
 
     if (params?.userId) {
       conditions.push(eq(artists.userId, params.userId));
+    }
+
+    if (params?.query) {
+      const term = `%${params.query}%`;
+      conditions.push(
+        or(
+          ilike(userAlias.displayName, term),
+          sql`LOWER(${userAlias.firstName} || ' ' || ${userAlias.lastName}) LIKE LOWER(${term})`,
+          ilike(artists.artistName, term),
+          ilike(artists.stageName, term),
+        )
+      );
     }
 
     // Aplicar condiciones si existen

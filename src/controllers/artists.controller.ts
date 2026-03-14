@@ -50,17 +50,19 @@ export const artistsController = {
    */
   async getArtistsByFilters(req: Request, res: Response) {
     try {
-      const { 
-        limit = 50, 
-        category, 
-        city, 
-        priceMin, 
-        priceMax, 
-        availability 
+      const {
+        limit = 50,
+        query,
+        category,
+        city,
+        priceMin,
+        priceMax,
+        availability
       } = req.query;
 
       const artists = await artistStorage.getArtists({
         limit: Number(limit),
+        query: query as string | undefined,
         category: category as string,
         city: city as string,
         priceMin: priceMin ? Number(priceMin) : undefined,

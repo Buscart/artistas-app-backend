@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import helmet from 'helmet';
@@ -10,6 +10,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { Express } from 'express';
 import { sql } from 'drizzle-orm';
 import apiRoutes from './routes/api.routes.js';
+import chatRoutes from './routes/chat.routes.js';
 import { handleWebhook } from './controllers/stripe.controller.js';
 import csrfRoutes from './routes/csrfRoutes.js';
 import { db, dbReady } from './db.js';
@@ -61,7 +62,7 @@ const devOrigins = new Set([
 const offerConnections = new Map<number, Set<WebSocket>>();
 const userConnections = new Map<string, Set<WebSocket>>(); // NUEVO: Para notificaciones por usuario
 
-wss.on('connection', async (ws, req) => {
+wss.on('connection', async (ws: WebSocket, req: Request) => {
   try {
     // Extraer token del query ?token= o del header Authorization: Bearer XXX
     const urlObj = new URL(req.url || '', 'http://localhost');
@@ -366,6 +367,7 @@ if (process.env.NODE_ENV !== 'production') {
 // Configuración de rutas
 app.use('/api/auth', csrfRoutes); // Rutas CSRF
 app.use('/api', apiRoutes);
+app.use('/api/v1/chat', chatRoutes);
 
 // Ruta de healthcheck
 app.get('/health', async (_req, res) => {

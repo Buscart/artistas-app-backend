@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import axios from 'axios';
 import { db } from '../db.js';
 import { payments, userContracts } from '../schema/contracts.js';
 import { eq, and, desc } from 'drizzle-orm';
@@ -8,6 +9,111 @@ const router = Router();
 
 // Todas las rutas requieren autenticación
 router.use(authMiddleware as any);
+
+// ─── Crear preferencia de MercadoPago ────────────────────────────────────────
+router.post('/mp/preference', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.uid;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'No autorizado' });
+    }
+
+    const { contractId, title, amount, description } = req.body;
+
+    if (!contractId || !title || !amount) {
+      return res.status(400).json({
+        success: false,
+        message: 'contractId, title y amount son requeridos',
+      });
+    }
+
+    const accessToken = process.env.MP_ACCESS_TOKEN;
+    if (!accessToken) {
+      // Sin credenciales MP configuradas — retornar URL simulada para desarrollo
+      console.warn('[MP] MP_ACCESS_TOKEN no configurado — usando modo sandbox simulado');
+      return res.json({
+        success: true,
+        data: {
+          preferenceId: `MOCK_${contractId}_${Date.now()}`,
+          initPoint: `https://www.mercadopago.com.co/checkout/v1/redirect?preference_id=MOCK_${contractId}`,
+          sandboxInitPoint: `https://sandbox.mercadopago.com.co/checkout/v1/redirect?preference_id=MOCK_${contractId}`,
+        },
+      });
+    }
+
+    const appUrl = process.env.APP_DEEP_LINK_BASE || 'buscartpro://';
+
+    const mpRes = await axios.post(
+      'https://api.mercadopago.com/checkout/preferences',
+      {
+        items: [
+          {
+            id: String(contractId),
+            title,
+            description: description || title,
+            quantity: 1,
+            currency_id: 'COP',
+            unit_price: Math.round(Number(amount)),
+          },
+        ],
+        back_urls: {
+          success: `${appUrl}payment/success`,
+          failure: `${appUrl}payment/failure`,
+          pending: `${appUrl}payment/pending`,
+        },
+        auto_return: 'approved',
+        external_reference: String(contractId),
+        metadata: { contract_id: contractId, client_id: userId },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000,
+      }
+    );
+
+    const { id: preferenceId, init_point, sandbox_init_point } = mpRes.data;
+
+    // Persistir preferenceId en metadata del contrato
+    try {
+      const [contract] = await db
+        .select()
+        .from(userContracts)
+        .where(eq(userContracts.id, contractId))
+        .limit(1);
+      if (contract) {
+        const existingMeta = (contract.metadata as Record<string, any>) || {};
+        await db
+          .update(userContracts)
+          .set({
+            metadata: { ...existingMeta, mercadoPagoPreferenceId: preferenceId },
+            updatedAt: new Date(),
+          })
+          .where(eq(userContracts.id, contractId));
+      }
+    } catch (_) {
+      // Non-fatal — la preferencia igual funciona
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        preferenceId,
+        initPoint: init_point,
+        sandboxInitPoint: sandbox_init_point,
+      },
+    });
+  } catch (error: any) {
+    console.error('[MP] Error creando preferencia:', error?.response?.data || error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al crear preferencia de pago',
+      error: error?.response?.data?.message || error.message,
+    });
+  }
+});
 
 // Crear un nuevo pago para un contrato
 router.post('/', async (req: Request, res: Response) => {
