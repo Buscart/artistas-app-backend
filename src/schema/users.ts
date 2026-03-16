@@ -53,6 +53,9 @@ export const users = pgTable('users', {
   ageVerified: boolean('age_verified').default(false),
   termsAcceptedAt: timestamp('terms_accepted_at'),
 
+  // Estado de completitud del perfil (requiere ≥4 fotos destacadas en gallery)
+  profileComplete: boolean('profile_complete').default(false),
+
   // Campos de Stripe
   stripeStatus: varchar('stripe_status', { length: 20 }), // disconnected, pending, connected, restricted, error
   stripeAccountId: varchar('stripe_account_id'), // ID de cuenta en Stripe

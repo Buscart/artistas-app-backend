@@ -56,6 +56,7 @@ export const featuredItems = pgTable('featured_items', {
   url: text('url').notNull(),
   type: varchar('type', { enum: ['youtube', 'spotify', 'vimeo', 'soundcloud', 'other'] }).notNull(),
   thumbnailUrl: text('thumbnail_url'),
+  isFeatured: boolean('is_featured').default(false),
   createdAt: timestamp('created_at').default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp('updated_at').default(sql`CURRENT_TIMESTAMP`),
 });

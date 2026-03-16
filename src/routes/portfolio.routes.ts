@@ -2,14 +2,50 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.middleware.js';
 import { asyncHandler, AppError } from '../middleware/errorHandler.middleware.js';
 import { db } from '../db.js';
-import { gallery, featuredItems } from '../schema.js';
-import { eq, and } from 'drizzle-orm';
+import { gallery, featuredItems, users } from '../schema.js';
+import { eq, and, inArray, ne } from 'drizzle-orm';
 import { logger } from '../utils/logger.js';
 import {
   readUserRateLimit,
   moderateUserRateLimit,
   uploadRateLimit
 } from '../middleware/userRateLimit.middleware.js';
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/**
+ * Extrae el ID de un video de YouTube desde distintos formatos de URL.
+ * Soporta: watch?v=, youtu.be/, shorts/, embed/
+ */
+function extractYouTubeId(url: string): string | null {
+  const patterns = [
+    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/|youtube\.com\/embed\/)([A-Za-z0-9_-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/**
+ * Recalcula y persiste profile_complete para el usuario:
+ * true si tiene exactamente 4 fotos marcadas como is_featured.
+ */
+async function syncProfileComplete(userId: string): Promise<boolean> {
+  const featuredPhotos = await db.select({ id: gallery.id })
+    .from(gallery)
+    .where(and(eq(gallery.userId, userId), eq(gallery.isFeatured, true)))
+    .limit(5);
+
+  const isComplete = featuredPhotos.length >= 4;
+
+  await db.update(users)
+    .set({ profileComplete: isComplete, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+
+  return isComplete;
+}
 
 const portfolioRoutes = Router();
 
@@ -352,6 +388,8 @@ portfolioRoutes.delete('/photos/:id', authMiddleware, moderateUserRateLimit, asy
  *         $ref: '#/components/responses/ValidationError'
  */
 // POST /api/v1/portfolio/videos - Agregar video/enlace destacado
+// Auto-extrae thumbnail de YouTube. Marca el nuevo video como is_featured=true
+// y desactiva is_featured de todos los videos anteriores del mismo usuario.
 portfolioRoutes.post('/videos', authMiddleware, moderateUserRateLimit, asyncHandler(async (req, res) => {
   const userId = req.user!.id;
   const { url, title, description, type, thumbnailUrl } = req.body;
@@ -364,10 +402,24 @@ portfolioRoutes.post('/videos', authMiddleware, moderateUserRateLimit, asyncHand
     throw new AppError(400, 'title es requerido', true, 'MISSING_TITLE');
   }
 
-  // Validar tipo si se proporciona
   const validTypes = ['youtube', 'spotify', 'vimeo', 'soundcloud', 'other'];
   const itemType = type && validTypes.includes(type) ? type : 'other';
 
+  // Auto-extraer thumbnail de YouTube si no se proveyó
+  let resolvedThumbnail = thumbnailUrl || null;
+  if (!resolvedThumbnail && itemType === 'youtube') {
+    const ytId = extractYouTubeId(url);
+    if (ytId) {
+      resolvedThumbnail = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+    }
+  }
+
+  // Desactivar is_featured de todos los videos anteriores del usuario
+  await db.update(featuredItems)
+    .set({ isFeatured: false, updatedAt: new Date() })
+    .where(eq(featuredItems.userId, userId));
+
+  // Insertar nuevo video como el destacado
   const [newVideo] = await db
     .insert(featuredItems)
     .values({
@@ -376,15 +428,16 @@ portfolioRoutes.post('/videos', authMiddleware, moderateUserRateLimit, asyncHand
       title,
       description: description || null,
       type: itemType,
-      thumbnailUrl: thumbnailUrl || null,
+      thumbnailUrl: resolvedThumbnail,
+      isFeatured: true,
     })
     .returning();
 
-  logger.info(`Usuario ${userId} agregó video/enlace al portfolio`, { itemId: newVideo.id }, 'Portfolio');
+  logger.info(`Usuario ${userId} agregó video al portfolio (auto-featured)`, { itemId: newVideo.id }, 'Portfolio');
 
   res.status(201).json({
     success: true,
-    message: 'Video/enlace agregado exitosamente',
+    message: 'Video agregado exitosamente y marcado como destacado',
     data: newVideo,
   });
 }));
@@ -815,6 +868,160 @@ portfolioRoutes.get('/me', authMiddleware, readUserRateLimit, asyncHandler(async
     data: {
       photos,
       videos,
+    },
+  });
+}));
+
+// ── NUEVOS ENDPOINTS ────────────────────────────────────────────────────────────
+
+/**
+ * PATCH /api/v1/portfolio/set-featured-photos
+ * Body: { photoIds: number[] }  — exactamente 4 IDs de fotos propias
+ *
+ * Marca los 4 IDs recibidos como is_featured=true.
+ * Pone is_featured=false en todas las demás fotos del usuario.
+ * Luego recalcula profile_complete.
+ */
+portfolioRoutes.patch('/set-featured-photos', authMiddleware, moderateUserRateLimit, asyncHandler(async (req, res) => {
+  const userId = req.user!.id;
+  const { photoIds } = req.body;
+
+  if (!Array.isArray(photoIds) || photoIds.length !== 4) {
+    throw new AppError(400, 'Se requieren exactamente 4 IDs de fotos', true, 'INVALID_PHOTO_IDS');
+  }
+
+  const ids = photoIds.map((id: unknown) => Number(id));
+  if (ids.some(isNaN)) {
+    throw new AppError(400, 'Todos los IDs deben ser números enteros', true, 'INVALID_PHOTO_IDS');
+  }
+
+  // Verificar que todas las fotos pertenecen al usuario
+  const owned = await db.select({ id: gallery.id })
+    .from(gallery)
+    .where(and(eq(gallery.userId, userId), inArray(gallery.id, ids)));
+
+  if (owned.length !== 4) {
+    throw new AppError(403, 'Algunas fotos no te pertenecen o no existen', true, 'FORBIDDEN');
+  }
+
+  // Desmarcar todas las fotos del usuario
+  await db.update(gallery)
+    .set({ isFeatured: false, updatedAt: new Date() })
+    .where(eq(gallery.userId, userId));
+
+  // Marcar las 4 seleccionadas
+  await db.update(gallery)
+    .set({ isFeatured: true, updatedAt: new Date() })
+    .where(and(eq(gallery.userId, userId), inArray(gallery.id, ids)));
+
+  // Actualizar profile_complete
+  const profileComplete = await syncProfileComplete(userId);
+
+  logger.info(`Usuario ${userId} actualizó 4 fotos destacadas`, { ids }, 'Portfolio');
+
+  res.json({
+    success: true,
+    message: 'Fotos destacadas actualizadas',
+    data: { profileComplete },
+  });
+}));
+
+/**
+ * PATCH /api/v1/portfolio/videos/:id/feature
+ * Marca el video :id como is_featured=true y desactiva los demás.
+ */
+portfolioRoutes.patch('/videos/:id/feature', authMiddleware, moderateUserRateLimit, asyncHandler(async (req, res) => {
+  const userId = req.user!.id;
+  const itemId = parseInt(req.params.id);
+
+  if (isNaN(itemId)) {
+    throw new AppError(400, 'ID inválido', true, 'INVALID_ID');
+  }
+
+  // Verificar propiedad
+  const [existing] = await db.select()
+    .from(featuredItems)
+    .where(and(eq(featuredItems.id, itemId), eq(featuredItems.userId, userId)))
+    .limit(1);
+
+  if (!existing) {
+    throw new AppError(404, 'Video no encontrado', true, 'NOT_FOUND');
+  }
+
+  // Desactivar todos los otros
+  await db.update(featuredItems)
+    .set({ isFeatured: false, updatedAt: new Date() })
+    .where(and(eq(featuredItems.userId, userId), ne(featuredItems.id, itemId)));
+
+  // Activar el seleccionado
+  const [updated] = await db.update(featuredItems)
+    .set({ isFeatured: true, updatedAt: new Date() })
+    .where(eq(featuredItems.id, itemId))
+    .returning();
+
+  logger.info(`Usuario ${userId} marcó video ${itemId} como destacado`, undefined, 'Portfolio');
+
+  res.json({
+    success: true,
+    message: 'Video marcado como destacado',
+    data: updated,
+  });
+}));
+
+/**
+ * GET /api/v1/portfolio/profile/:userId
+ * Retorna el perfil público del usuario con:
+ *   - portfolio: las 4 fotos marcadas como is_featured (o las disponibles)
+ *   - featured_video: el único video marcado como is_featured
+ *   - profile_complete: boolean
+ */
+portfolioRoutes.get('/profile/:userId', readUserRateLimit, asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+
+  const [[user], featuredPhotos, featuredVideo] = await Promise.all([
+    db.select({
+      id: users.id,
+      displayName: users.displayName,
+      profileImageUrl: users.profileImageUrl,
+      coverImageUrl: users.coverImageUrl,
+      bio: users.bio,
+      userType: users.userType,
+      isVerified: users.isVerified,
+      profileComplete: users.profileComplete,
+    })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1),
+
+    db.select()
+      .from(gallery)
+      .where(and(
+        eq(gallery.userId, userId),
+        eq(gallery.isFeatured, true),
+        eq(gallery.isPublic, true),
+      ))
+      .orderBy(gallery.orderPosition)
+      .limit(4),
+
+    db.select()
+      .from(featuredItems)
+      .where(and(
+        eq(featuredItems.userId, userId),
+        eq(featuredItems.isFeatured, true),
+      ))
+      .limit(1),
+  ]);
+
+  if (!user) {
+    throw new AppError(404, 'Usuario no encontrado', true, 'NOT_FOUND');
+  }
+
+  res.json({
+    success: true,
+    data: {
+      ...user,
+      portfolio: featuredPhotos,
+      featured_video: featuredVideo[0] ?? null,
     },
   });
 }));
