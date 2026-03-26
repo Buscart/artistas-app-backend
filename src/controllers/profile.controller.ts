@@ -288,6 +288,7 @@ export const getPublicProfile = async (req: Request, res: Response) => {
           id: artists.id,
           stageName: artists.stageName,
           artistName: artists.artistName,
+          description: artists.description,
           categoryId: artists.categoryId,
           disciplineId: artists.disciplineId,
           roleId: artists.roleId,
@@ -353,6 +354,7 @@ export const getPublicProfile = async (req: Request, res: Response) => {
             code: artist.specializationCode || artist.specializationId.toString(),
             name: artist.specializationName || 'Especialización'
           } : null,
+          description: artist.description,  // texto largo "Acerca de mí" (≠ user.bio que es frase corta)
           yearsOfExperience: artist.yearsOfExperience,
           availability: artist.availability || {},
           tags: artist.tags || [],

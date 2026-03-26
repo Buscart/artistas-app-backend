@@ -1,63 +1,38 @@
 import { Request, Response } from 'express';
-import { EventService } from './event.service.js';
+import { EventCrudService } from './event.crud.service.js';
+import { EventAttendeesService } from './event.attendees.service.js';
+import { EventReviewsService } from './event.reviews.service.js';
 import { CreateEventInput, UpdateEventInput, EventFilterOptions } from './event.types.js';
 import { createEventSchema, updateEventSchema } from './event.validations.js';
 import { CertificateService } from '../../services/certificate.service.js';
 
-/**
- * Controlador de eventos - Maneja las peticiones HTTP
- */
 class EventController {
-  /**
-   * Obtiene un evento por su ID
-   */
+  // ── CRUD ──────────────────────────────────────────────────────────────────────
+
   static async getEventById(req: Request, res: Response) {
     try {
-      const { id } = req.params;
-      const eventId = parseInt(id, 10);
-      const userId = (req as any).user?.id; // Usuario autenticado (opcional)
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ error: 'ID de evento no válido' });
 
-      if (isNaN(eventId)) {
-        return res.status(400).json({ error: 'ID de evento no válido' });
-      }
+      const event = await EventCrudService.getEventById(eventId, (req as any).user?.id);
+      if (!event) return res.status(404).json({ error: 'Evento no encontrado' });
 
-      const event = await EventService.getEventById(eventId, userId);
-
-      if (!event) {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-
-      // Formatear respuesta con organizador mapeado (solo nombre y avatar)
       const organizer = event.organizer ? {
-        id: event.organizer.id,
-        displayName: event.organizer.displayName,
-        firstName: event.organizer.firstName,
-        lastName: event.organizer.lastName,
-        profileImageUrl: event.organizer.profileImageUrl,
-        isVerified: event.organizer.isVerified,
-        userType: event.organizer.userType,
-        // Campos mapeados para compatibilidad con frontend
+        ...event.organizer,
         name: event.organizer.displayName || `${event.organizer.firstName || ''} ${event.organizer.lastName || ''}`.trim() || 'Organizador',
         avatar: event.organizer.profileImageUrl || '/images/default-avatar.png',
         verified: event.organizer.isVerified || false,
-        // Estadísticas del organizador (se pueden calcular después)
         eventsCount: 0,
         rating: 0,
       } : null;
 
-      // Formatear agenda para el frontend
       const agenda = event.agenda?.map((item: any) => ({
         time: item.startTime ? new Date(item.startTime).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '',
         title: item.title,
         description: item.description,
-        speaker: item.speakerName ? {
-          name: item.speakerName,
-          title: item.speakerTitle,
-          image: item.speakerImage,
-        } : null,
+        speaker: item.speakerName ? { name: item.speakerName, title: item.speakerTitle, image: item.speakerImage } : null,
       })) || [];
 
-      // Formatear reseñas para el frontend
       const reviews = event.reviews?.map((review: any) => ({
         id: review.id,
         rating: review.rating,
@@ -73,1024 +48,346 @@ class EventController {
         } : null,
       })) || [];
 
-      const response = {
-        id: event.id,
-        title: event.title,
-        slug: event.slug,
-        description: event.description,
-        shortDescription: event.shortDescription,
-        startDate: event.startDate,
-        endDate: event.endDate,
-        timezone: event.timezone,
-        locationType: event.locationType,
-        address: event.address,
-        city: event.city,
-        state: event.state,
-        country: event.country,
-        coordinates: event.coordinates,
-        onlineEventUrl: event.onlineEventUrl,
-        venueName: event.venueName,
-        venueDescription: event.venueDescription,
-        isFree: event.isFree,
-        ticketPrice: event.ticketPrice,
-        ticketUrl: event.ticketUrl,
-        capacity: event.capacity,
-        availableTickets: event.availableTickets,
-        featuredImage: event.featuredImage,
-        gallery: event.gallery || [],
-        videoUrl: event.videoUrl,
-        status: event.status,
-        isFeatured: event.isFeatured,
-        isRecurring: event.isRecurring,
-        recurrencePattern: event.recurrencePattern,
-        categoryId: event.categoryId,
-        subcategories: event.subcategories || [],
-        tags: event.tags || [],
-        eventType: event.eventType,
-        viewCount: event.viewCount,
-        saveCount: event.saveCount,
-        shareCount: event.shareCount,
-        requiresApproval: event.requiresApproval,
-        enableWaitlist: event.enableWaitlist,
-        // Reseñas y rating
+      return res.status(200).json({
+        ...event,
         rating: event.reviewStats?.average || 0,
         reviewCount: event.reviewStats?.count || 0,
-        reviewStats: event.reviewStats,
-        reviews: reviews,
-        // Agenda
-        agenda: agenda,
-        // Estado del usuario actual
-        userRegistration: event.userRegistration,
-        attendeeCount: event.attendeeCount,
-        // Organizador
-        organizer: organizer,
-        createdAt: event.createdAt,
-        updatedAt: event.updatedAt,
-      };
-
-      return res.status(200).json(response);
+        agenda,
+        reviews,
+        organizer,
+      });
     } catch (error) {
       console.error('Error al obtener el evento:', error);
       return res.status(500).json({ error: 'Error interno del servidor' });
     }
   }
 
-  /**
-   * Obtiene los eventos de una empresa (público)
-   */
   static async getCompanyEvents(req: Request, res: Response) {
     try {
-      const { companyId } = req.params;
-      const id = parseInt(companyId, 10);
-
-      if (isNaN(id)) {
-        return res.status(400).json({ error: 'ID de empresa no válido' });
-      }
-
-      const companyEvents = await EventService.getCompanyEvents(id);
-
-      return res.status(200).json({
-        success: true,
-        data: companyEvents,
-      });
+      const id = parseInt(req.params.companyId, 10);
+      if (isNaN(id)) return res.status(400).json({ error: 'ID de empresa no válido' });
+      const data = await EventCrudService.getCompanyEvents(id);
+      return res.status(200).json({ success: true, data });
     } catch (error) {
       console.error('Error al obtener eventos de empresa:', error);
       return res.status(500).json({ error: 'Error interno del servidor' });
     }
   }
 
-  /**
-   * Obtiene los eventos del usuario autenticado
-   */
   static async getMyEvents(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const userId = req.user.id;
-      const userEvents = await EventService.getMyEvents(userId);
-
-      return res.status(200).json({
-        success: true,
-        data: userEvents
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const data = await EventCrudService.getMyEvents(req.user.id);
+      return res.status(200).json({ success: true, data });
     } catch (error) {
       console.error('Error al obtener mis eventos:', error);
       return res.status(500).json({ error: 'Error interno del servidor' });
     }
   }
 
-  /**
-   * Crea un nuevo evento
-   */
   static async createEvent(req: Request, res: Response) {
-    console.log('=== Iniciando creación de evento ===');
-
     try {
-      // Verificar autenticación
-      if (!req.user) {
-        console.error('Intento de crear evento sin autenticación');
-        return res.status(401).json({
-          success: false,
-          error: 'No autorizado',
-          message: 'Debes iniciar sesión para crear un evento',
-          code: 'UNAUTHORIZED'
-        });
-      }
+      if (!req.user) return res.status(401).json({ success: false, error: 'No autorizado', code: 'UNAUTHORIZED' });
 
       const eventData: CreateEventInput = req.body;
-      const userId = req.user.id;
-
-      console.log(`✅ Usuario autenticado: ${userId}`);
-
-      // Validar datos de entrada
       const validationResult = createEventSchema.safeParse(eventData);
       if (!validationResult.success) {
-        console.error('❌ Error de validación:', validationResult.error.issues);
-        return res.status(400).json({
-          success: false,
-          error: 'Datos de entrada inválidos',
-          message: 'Por favor, revisa los datos del evento',
-          errors: validationResult.error.issues,
-          code: 'VALIDATION_ERROR'
-        });
+        return res.status(400).json({ success: false, error: 'Datos de entrada inválidos', errors: validationResult.error.issues, code: 'VALIDATION_ERROR' });
       }
 
-      console.log('✅ Validación de datos exitosa');
-
-      // Crear evento usando el servicio
-      const newEvent = await EventService.createEvent(eventData, userId);
-
-      console.log('✅ Evento creado exitosamente:', newEvent.id);
-
-      res.status(201).json({
-        success: true,
-        message: 'Evento creado exitosamente',
-        data: newEvent,
-        code: 'EVENT_CREATED'
-      });
-
+      const newEvent = await EventCrudService.createEvent(eventData, req.user.id);
+      return res.status(201).json({ success: true, message: 'Evento creado exitosamente', data: newEvent, code: 'EVENT_CREATED' });
     } catch (error: any) {
-      console.error('❌ Error en createEvent:', error);
-
-      if (res.headersSent) {
-        return;
-      }
-
-      // Manejar errores específicos
-      if (error.code === '23505') {
-        return res.status(409).json({
-          success: false,
-          error: 'Conflicto',
-          message: 'Ya existe un evento con un identificador similar',
-          code: 'DUPLICATE_ENTRY'
-        });
-      }
-
-      if (error.code?.startsWith('23')) {
-        return res.status(500).json({
-          success: false,
-          error: 'Error de base de datos',
-          message: 'Ocurrió un error al procesar la solicitud',
-          code: 'DATABASE_ERROR',
-          details: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-      }
-
-      res.status(500).json({
-        success: false,
-        error: 'Error interno del servidor',
-        message: 'No se pudo crear el evento',
-        code: 'INTERNAL_SERVER_ERROR',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+      if (res.headersSent) return;
+      if (error.code === '23505') return res.status(409).json({ success: false, error: 'Conflicto', code: 'DUPLICATE_ENTRY' });
+      if (error.code?.startsWith('23')) return res.status(500).json({ success: false, error: 'Error de base de datos', code: 'DATABASE_ERROR' });
+      return res.status(500).json({ success: false, error: 'Error interno del servidor', code: 'INTERNAL_SERVER_ERROR' });
     }
   }
 
-  /**
-   * Actualiza un evento existente
-   */
   static async updateEvent(req: Request, res: Response) {
-    console.log('=== Iniciando actualización de evento ===');
-
     try {
-      // Verificar autenticación
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          error: 'No autorizado',
-          message: 'Debes iniciar sesión para actualizar un evento',
-          code: 'UNAUTHORIZED'
-        });
-      }
+      if (!req.user) return res.status(401).json({ success: false, error: 'No autorizado', code: 'UNAUTHORIZED' });
 
-      const { id } = req.params;
-      const eventId = parseInt(id, 10);
-      const userId = req.user.id;
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ success: false, error: 'ID de evento no válido', code: 'INVALID_EVENT_ID' });
+
       const eventData: UpdateEventInput = req.body;
-
-      // Validar ID
-      if (isNaN(eventId)) {
-        return res.status(400).json({
-          success: false,
-          error: 'ID de evento no válido',
-          code: 'INVALID_EVENT_ID'
-        });
-      }
-
-      // Validar datos
       const validationResult = updateEventSchema.safeParse({ ...eventData, id: eventId });
       if (!validationResult.success) {
-        return res.status(400).json({
-          success: false,
-          error: 'Datos de entrada inválidos',
-          message: 'Por favor, revisa los datos del evento',
-          errors: validationResult.error.issues,
-          code: 'VALIDATION_ERROR'
-        });
+        return res.status(400).json({ success: false, error: 'Datos de entrada inválidos', errors: validationResult.error.issues, code: 'VALIDATION_ERROR' });
       }
 
-      // Actualizar usando el servicio
-      const updatedEvent = await EventService.updateEvent(eventId, eventData, userId);
-
-      console.log('✅ Evento actualizado correctamente');
-
-      return res.json({
-        success: true,
-        data: updatedEvent,
-        message: 'Evento actualizado correctamente',
-        code: 'EVENT_UPDATED'
-      });
-
+      const updatedEvent = await EventCrudService.updateEvent(eventId, eventData, req.user.id);
+      return res.json({ success: true, data: updatedEvent, message: 'Evento actualizado correctamente', code: 'EVENT_UPDATED' });
     } catch (error: any) {
-      console.error('❌ Error al actualizar el evento:', error);
-
-      if (res.headersSent) {
-        return;
-      }
-
-      // Manejar errores del servicio
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({
-          success: false,
-          error: 'Evento no encontrado',
-          code: 'EVENT_NOT_FOUND'
-        });
-      }
-
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({
-          success: false,
-          error: 'No autorizado',
-          message: 'Solo el organizador del evento puede actualizarlo',
-          code: 'FORBIDDEN'
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        error: 'Error interno del servidor',
-        message: 'No se pudo actualizar el evento',
-        code: 'INTERNAL_SERVER_ERROR',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+      if (res.headersSent) return;
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ success: false, error: 'Evento no encontrado', code: 'EVENT_NOT_FOUND' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ success: false, error: 'No autorizado', code: 'FORBIDDEN' });
+      return res.status(500).json({ success: false, error: 'Error interno del servidor', code: 'INTERNAL_SERVER_ERROR' });
     }
   }
 
-  /**
-   * Cancela un evento
-   */
   static async cancelEvent(req: Request, res: Response) {
     try {
-      const { id } = req.params;
       const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ success: false, error: 'No autorizado', code: 'UNAUTHORIZED' });
 
-      if (!userId) {
-        return res.status(401).json({
-          success: false,
-          error: 'No autorizado',
-          message: 'Debes iniciar sesión para cancelar un evento',
-          code: 'UNAUTHORIZED'
-        });
-      }
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ success: false, error: 'ID de evento no válido', code: 'INVALID_EVENT_ID' });
 
-      const eventId = parseInt(id, 10);
-      if (isNaN(eventId)) {
-        return res.status(400).json({
-          success: false,
-          error: 'ID de evento no válido',
-          code: 'INVALID_EVENT_ID'
-        });
-      }
-
-      // Cancelar usando el servicio
-      const cancelledEvent = await EventService.cancelEvent(eventId, userId);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Evento cancelado exitosamente',
-        data: cancelledEvent
-      });
-
+      const cancelledEvent = await EventCrudService.cancelEvent(eventId, userId);
+      return res.status(200).json({ success: true, message: 'Evento cancelado exitosamente', data: cancelledEvent });
     } catch (error: any) {
-      console.error('Error al cancelar el evento:', error);
-
-      // Manejar errores del servicio
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({
-          success: false,
-          error: 'Evento no encontrado',
-          code: 'EVENT_NOT_FOUND'
-        });
-      }
-
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({
-          success: false,
-          error: 'No autorizado',
-          message: 'Solo el organizador puede cancelar este evento',
-          code: 'FORBIDDEN'
-        });
-      }
-
-      if (error.message === 'ALREADY_CANCELLED') {
-        return res.status(400).json({
-          success: false,
-          error: 'El evento ya está cancelado',
-          code: 'ALREADY_CANCELLED'
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        error: 'Error interno del servidor',
-        message: 'No se pudo cancelar el evento',
-        code: 'INTERNAL_SERVER_ERROR',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ success: false, error: 'Evento no encontrado', code: 'EVENT_NOT_FOUND' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ success: false, error: 'No autorizado', code: 'FORBIDDEN' });
+      if (error.message === 'ALREADY_CANCELLED') return res.status(400).json({ success: false, error: 'El evento ya está cancelado', code: 'ALREADY_CANCELLED' });
+      return res.status(500).json({ success: false, error: 'Error interno del servidor', code: 'INTERNAL_SERVER_ERROR' });
     }
   }
 
-  /**
-   * Elimina un evento permanentemente
-   */
   static async deleteEvent(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({
-          success: false,
-          error: 'No autorizado',
-          message: 'Debes iniciar sesión para eliminar un evento',
-          code: 'UNAUTHORIZED'
-        });
-      }
+      if (!req.user) return res.status(401).json({ success: false, error: 'No autorizado', code: 'UNAUTHORIZED' });
 
-      const { id } = req.params;
-      const eventId = parseInt(id, 10);
-      const userId = req.user.id;
+      const eventId = parseInt(req.params.id, 10);
+      if (isNaN(eventId)) return res.status(400).json({ success: false, error: 'ID de evento no válido', code: 'INVALID_EVENT_ID' });
 
-      if (isNaN(eventId)) {
-        return res.status(400).json({
-          success: false,
-          error: 'ID de evento no válido',
-          code: 'INVALID_EVENT_ID'
-        });
-      }
-
-      const deletedEvent = await EventService.deleteEvent(eventId, userId);
-
-      return res.status(200).json({
-        success: true,
-        message: 'Evento eliminado exitosamente',
-        data: deletedEvent
-      });
-
+      const deletedEvent = await EventCrudService.deleteEvent(eventId, req.user.id);
+      return res.status(200).json({ success: true, message: 'Evento eliminado exitosamente', data: deletedEvent });
     } catch (error: any) {
-      console.error('Error al eliminar el evento:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({
-          success: false,
-          error: 'Evento no encontrado',
-          code: 'EVENT_NOT_FOUND'
-        });
-      }
-
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({
-          success: false,
-          error: 'No autorizado',
-          message: 'Solo el organizador del evento puede eliminarlo',
-          code: 'FORBIDDEN'
-        });
-      }
-
-      if (error.message === 'HAS_ATTENDEES') {
-        return res.status(400).json({
-          success: false,
-          error: 'No se puede eliminar',
-          message: 'No puedes eliminar un evento que tiene asistentes aprobados o con check-in. Cancela el evento en su lugar.',
-          code: 'HAS_ATTENDEES'
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        error: 'Error interno del servidor',
-        message: 'No se pudo eliminar el evento',
-        code: 'INTERNAL_SERVER_ERROR',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
-      });
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ success: false, error: 'Evento no encontrado', code: 'EVENT_NOT_FOUND' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ success: false, error: 'No autorizado', code: 'FORBIDDEN' });
+      if (error.message === 'HAS_ATTENDEES') return res.status(400).json({ success: false, error: 'No se puede eliminar', message: 'No puedes eliminar un evento que tiene asistentes. Cancela el evento en su lugar.', code: 'HAS_ATTENDEES' });
+      return res.status(500).json({ success: false, error: 'Error interno del servidor', code: 'INTERNAL_SERVER_ERROR' });
     }
   }
 
-  /**
-   * Busca eventos con filtros
-   */
   static async searchEvents(req: Request, res: Response) {
     try {
       const filters = req.query as unknown as EventFilterOptions;
-      const result = await EventService.searchEvents(filters);
-
+      const result = await EventCrudService.searchEvents(filters);
       res.status(200).json(result);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      console.error('Error al buscar eventos:', error);
-      res.status(500).json({
-        message: 'Error al buscar eventos',
-        error: errorMessage
-      });
+      res.status(500).json({ message: 'Error al buscar eventos', error: errorMessage });
     }
   }
 
-  /**
-   * Obtiene los próximos eventos
-   */
   static async getUpcomingEvents(req: Request, res: Response) {
     try {
       const { limit = '10' } = req.query;
-      const upcomingEvents = await EventService.getUpcomingEvents(limit as string);
-
+      const upcomingEvents = await EventCrudService.getUpcomingEvents(limit as string);
       res.status(200).json(upcomingEvents);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
-      console.error('Error al obtener próximos eventos:', error);
-      res.status(500).json({
-        message: 'Error al obtener los próximos eventos',
-        error: errorMessage
-      });
+      res.status(500).json({ message: 'Error al obtener los próximos eventos', error: errorMessage });
     }
   }
 
-  // ========== GESTIÓN DE ASISTENTES (Luma-style) ==========
+  // ── ASISTENTES ────────────────────────────────────────────────────────────────
 
-  /**
-   * Registra un usuario para un evento
-   */
   static async registerForEvent(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId } = req.params;
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
       const { ticketTypeId } = req.body;
-      const userId = req.user.id;
-
-      const attendee = await EventService.registerForEvent(
-        parseInt(eventId),
-        userId,
-        ticketTypeId
-      );
-
-      res.status(201).json({
-        success: true,
-        message: 'Registro exitoso',
-        data: attendee
-      });
+      const attendee = await EventAttendeesService.registerForEvent(parseInt(req.params.eventId), req.user.id, ticketTypeId);
+      res.status(201).json({ success: true, message: 'Registro exitoso', data: attendee });
     } catch (error: any) {
-      console.error('Error al registrar para evento:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'EVENT_CANCELLED') {
-        return res.status(400).json({ error: 'El evento ha sido cancelado' });
-      }
-      if (error.message === 'ALREADY_REGISTERED') {
-        return res.status(400).json({ error: 'Ya estás registrado para este evento' });
-      }
-      if (error.message === 'EVENT_FULL') {
-        return res.status(400).json({ error: 'El evento está lleno' });
-      }
-
-      res.status(500).json({ error: 'Error al procesar el registro' });
+      const errorMap: Record<string, [number, string]> = {
+        EVENT_NOT_FOUND: [404, 'Evento no encontrado'],
+        EVENT_CANCELLED: [400, 'El evento ha sido cancelado'],
+        ALREADY_REGISTERED: [400, 'Ya estás registrado para este evento'],
+        EVENT_FULL: [400, 'El evento está lleno'],
+      };
+      const [status, message] = errorMap[error.message] || [500, 'Error al procesar el registro'];
+      res.status(status).json({ error: message });
     }
   }
 
-  /**
-   * Cancela el registro de un usuario
-   */
   static async unregisterFromEvent(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId } = req.params;
-      const userId = req.user.id;
-
-      await EventService.unregisterFromEvent(parseInt(eventId), userId);
-
-      res.status(200).json({
-        success: true,
-        message: 'Registro cancelado exitosamente'
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      await EventAttendeesService.unregisterFromEvent(parseInt(req.params.eventId), req.user.id);
+      res.status(200).json({ success: true, message: 'Registro cancelado exitosamente' });
     } catch (error: any) {
-      console.error('Error al cancelar registro:', error);
-
-      if (error.message === 'REGISTRATION_NOT_FOUND') {
-        return res.status(404).json({ error: 'Registro no encontrado' });
-      }
-
+      if (error.message === 'REGISTRATION_NOT_FOUND') return res.status(404).json({ error: 'Registro no encontrado' });
       res.status(500).json({ error: 'Error al cancelar el registro' });
     }
   }
 
-  /**
-   * Obtiene el registro del usuario actual para un evento
-   */
   static async getMyRegistration(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId } = req.params;
-      const userId = req.user.id;
-
-      const registration = await EventService.getMyRegistration(parseInt(eventId), userId);
-
-      res.status(200).json({
-        success: true,
-        data: registration
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const registration = await EventAttendeesService.getMyRegistration(parseInt(req.params.eventId), req.user.id);
+      res.status(200).json({ success: true, data: registration });
     } catch (error) {
-      console.error('Error al obtener registro:', error);
       res.status(500).json({ error: 'Error al obtener el registro' });
     }
   }
 
-  /**
-   * Obtiene todos los asistentes de un evento (solo organizador)
-   */
   static async getEventAttendees(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId } = req.params;
-      const userId = req.user.id;
-
-      const attendees = await EventService.getEventAttendees(parseInt(eventId), userId);
-
-      res.status(200).json({
-        success: true,
-        data: attendees
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const attendees = await EventAttendeesService.getEventAttendees(parseInt(req.params.eventId), req.user.id);
+      res.status(200).json({ success: true, data: attendees });
     } catch (error: any) {
-      console.error('Error al obtener asistentes:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'No tienes permisos para ver los asistentes' });
-      }
-
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Evento no encontrado' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ error: 'No tienes permisos para ver los asistentes' });
       res.status(500).json({ error: 'Error al obtener los asistentes' });
     }
   }
 
-  /**
-   * Obtiene estadísticas de asistentes para un evento
-   * - Usuarios no autenticados: solo ven total de asistentes y capacidad
-   * - Organizador: ve todas las estadísticas (pending, rejected, waitlisted, etc.)
-   */
   static async getAttendeeStats(req: Request, res: Response) {
     try {
-      const { eventId } = req.params;
       const userId = (req as any).user?.id;
+      const eventId = parseInt(req.params.eventId);
+      const stats = await EventAttendeesService.getAttendeeStats(eventId);
+      const isOrganizer = await EventCrudService.isEventOrganizer(eventId, userId);
 
-      const stats = await EventService.getAttendeeStats(parseInt(eventId));
-
-      // Verificar si el usuario es el organizador
-      const isOrganizer = await EventService.isEventOrganizer(parseInt(eventId), userId);
-
-      // Para usuarios no autenticados o no organizadores, limitar datos
       if (!isOrganizer) {
-        return res.status(200).json({
-          success: true,
-          data: {
-            approved: stats.approved,
-            capacity: stats.capacity,
-            availableSpots: stats.availableSpots,
-            // No exponer: pending, rejected, waitlisted, checked_in
-          }
-        });
+        return res.status(200).json({ success: true, data: { approved: stats.approved, capacity: stats.capacity, availableSpots: stats.availableSpots } });
       }
-
-      // Para el organizador, retornar todas las estadísticas
-      res.status(200).json({
-        success: true,
-        data: stats
-      });
+      res.status(200).json({ success: true, data: stats });
     } catch (error) {
-      console.error('Error al obtener estadísticas:', error);
       res.status(500).json({ error: 'Error al obtener las estadísticas' });
     }
   }
 
-  /**
-   * Aprueba un asistente
-   */
   static async approveAttendee(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId, attendeeId } = req.params;
-      const userId = req.user.id;
-
-      const attendee = await EventService.approveAttendee(
-        parseInt(eventId),
-        parseInt(attendeeId),
-        userId
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Asistente aprobado',
-        data: attendee
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const attendee = await EventAttendeesService.approveAttendee(parseInt(req.params.eventId), parseInt(req.params.attendeeId), req.user.id);
+      res.status(200).json({ success: true, message: 'Asistente aprobado', data: attendee });
     } catch (error: any) {
-      console.error('Error al aprobar asistente:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
-      }
-      if (error.message === 'EVENT_FULL') {
-        return res.status(400).json({ error: 'El evento está lleno' });
-      }
-
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Evento no encontrado' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
+      if (error.message === 'EVENT_FULL') return res.status(400).json({ error: 'El evento está lleno' });
       res.status(500).json({ error: 'Error al aprobar el asistente' });
     }
   }
 
-  /**
-   * Rechaza un asistente
-   */
   static async rejectAttendee(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId, attendeeId } = req.params;
-      const userId = req.user.id;
-
-      const attendee = await EventService.rejectAttendee(
-        parseInt(eventId),
-        parseInt(attendeeId),
-        userId
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Asistente rechazado',
-        data: attendee
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const attendee = await EventAttendeesService.rejectAttendee(parseInt(req.params.eventId), parseInt(req.params.attendeeId), req.user.id);
+      res.status(200).json({ success: true, message: 'Asistente rechazado', data: attendee });
     } catch (error: any) {
-      console.error('Error al rechazar asistente:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
-      }
-
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Evento no encontrado' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
       res.status(500).json({ error: 'Error al rechazar el asistente' });
     }
   }
 
-  /**
-   * Mueve un asistente a la lista de espera
-   */
   static async moveToWaitlist(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId, attendeeId } = req.params;
-      const userId = req.user.id;
-
-      const attendee = await EventService.moveToWaitlist(
-        parseInt(eventId),
-        parseInt(attendeeId),
-        userId
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Asistente movido a lista de espera',
-        data: attendee
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const attendee = await EventAttendeesService.moveToWaitlist(parseInt(req.params.eventId), parseInt(req.params.attendeeId), req.user.id);
+      res.status(200).json({ success: true, message: 'Asistente movido a lista de espera', data: attendee });
     } catch (error: any) {
-      console.error('Error al mover a lista de espera:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
-      }
-      if (error.message === 'WAITLIST_NOT_ENABLED') {
-        return res.status(400).json({ error: 'La lista de espera no está habilitada' });
-      }
-
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Evento no encontrado' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
+      if (error.message === 'WAITLIST_NOT_ENABLED') return res.status(400).json({ error: 'La lista de espera no está habilitada' });
       res.status(500).json({ error: 'Error al mover a lista de espera' });
     }
   }
 
-  /**
-   * Mueve un asistente de la lista de espera a aprobado
-   */
   static async moveFromWaitlist(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId, attendeeId } = req.params;
-      const userId = req.user.id;
-
-      const attendee = await EventService.moveFromWaitlist(
-        parseInt(eventId),
-        parseInt(attendeeId),
-        userId
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Asistente aprobado desde lista de espera',
-        data: attendee
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const attendee = await EventAttendeesService.moveFromWaitlist(parseInt(req.params.eventId), parseInt(req.params.attendeeId), req.user.id);
+      res.status(200).json({ success: true, message: 'Asistente aprobado desde lista de espera', data: attendee });
     } catch (error: any) {
-      console.error('Error al mover desde lista de espera:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
-      }
-      if (error.message === 'EVENT_FULL') {
-        return res.status(400).json({ error: 'El evento está lleno' });
-      }
-
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Evento no encontrado' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
+      if (error.message === 'EVENT_FULL') return res.status(400).json({ error: 'El evento está lleno' });
       res.status(500).json({ error: 'Error al aprobar desde lista de espera' });
     }
   }
 
-  // ========== CHECK-IN ==========
-
-  /**
-   * Hace check-in de un asistente en el evento
-   */
   static async checkInAttendee(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId, attendeeId } = req.params;
-      const userId = req.user.id;
-
-      const attendee = await EventService.checkInAttendee(
-        parseInt(eventId),
-        parseInt(attendeeId),
-        userId
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Check-in realizado exitosamente',
-        data: attendee
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const attendee = await EventAttendeesService.checkInAttendee(parseInt(req.params.eventId), parseInt(req.params.attendeeId), req.user.id);
+      res.status(200).json({ success: true, message: 'Check-in realizado exitosamente', data: attendee });
     } catch (error: any) {
-      console.error('Error al hacer check-in:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
-      }
-      if (error.message === 'ATTENDEE_NOT_FOUND') {
-        return res.status(404).json({ error: 'Asistente no encontrado' });
-      }
-      if (error.message === 'ATTENDEE_NOT_APPROVED') {
-        return res.status(400).json({ error: 'El asistente no está aprobado para el evento' });
-      }
-      if (error.message === 'ALREADY_CHECKED_IN') {
-        return res.status(400).json({ error: 'El asistente ya hizo check-in' });
-      }
-
-      res.status(500).json({ error: 'Error al realizar el check-in' });
+      const errorMap: Record<string, [number, string]> = {
+        EVENT_NOT_FOUND: [404, 'Evento no encontrado'],
+        FORBIDDEN: [403, 'No tienes permisos para gestionar asistentes'],
+        ATTENDEE_NOT_FOUND: [404, 'Asistente no encontrado'],
+        ATTENDEE_NOT_APPROVED: [400, 'El asistente no está aprobado para el evento'],
+        ALREADY_CHECKED_IN: [400, 'El asistente ya hizo check-in'],
+      };
+      const [status, message] = errorMap[error.message] || [500, 'Error al realizar el check-in'];
+      res.status(status).json({ error: message });
     }
   }
 
-  /**
-   * Deshace el check-in de un asistente
-   */
   static async undoCheckIn(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId, attendeeId } = req.params;
-      const userId = req.user.id;
-
-      const attendee = await EventService.undoCheckIn(
-        parseInt(eventId),
-        parseInt(attendeeId),
-        userId
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Check-in revertido exitosamente',
-        data: attendee
-      });
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const attendee = await EventAttendeesService.undoCheckIn(parseInt(req.params.eventId), parseInt(req.params.attendeeId), req.user.id);
+      res.status(200).json({ success: true, message: 'Check-in revertido exitosamente', data: attendee });
     } catch (error: any) {
-      console.error('Error al revertir check-in:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'No tienes permisos para gestionar asistentes' });
-      }
-      if (error.message === 'ATTENDEE_NOT_FOUND') {
-        return res.status(404).json({ error: 'Asistente no encontrado' });
-      }
-      if (error.message === 'NOT_CHECKED_IN') {
-        return res.status(400).json({ error: 'El asistente no tiene check-in registrado' });
-      }
-
-      res.status(500).json({ error: 'Error al revertir el check-in' });
+      const errorMap: Record<string, [number, string]> = {
+        EVENT_NOT_FOUND: [404, 'Evento no encontrado'],
+        FORBIDDEN: [403, 'No tienes permisos para gestionar asistentes'],
+        ATTENDEE_NOT_FOUND: [404, 'Asistente no encontrado'],
+        NOT_CHECKED_IN: [400, 'El asistente no tiene check-in registrado'],
+      };
+      const [status, message] = errorMap[error.message] || [500, 'Error al revertir el check-in'];
+      res.status(status).json({ error: message });
     }
   }
 
-  // ========== RESEÑAS ==========
+  // ── RESEÑAS + HISTORIAL + CERTIFICADOS ────────────────────────────────────────
 
-  /**
-   * Crea una reseña para un evento
-   */
   static async createReview(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId } = req.params;
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
       const { rating, title, comment } = req.body;
-      const userId = req.user.id;
+      if (!rating || rating < 1 || rating > 5) return res.status(400).json({ error: 'La calificación debe ser entre 1 y 5' });
 
-      if (!rating || rating < 1 || rating > 5) {
-        return res.status(400).json({ error: 'La calificación debe ser entre 1 y 5' });
-      }
-
-      const review = await EventService.createReview(parseInt(eventId), userId, {
-        rating,
-        title,
-        comment,
-      });
-
-      res.status(201).json({
-        success: true,
-        message: 'Reseña creada exitosamente',
-        data: review,
-      });
+      const review = await EventReviewsService.createReview(parseInt(req.params.eventId), req.user.id, { rating, title, comment });
+      res.status(201).json({ success: true, message: 'Reseña creada exitosamente', data: review });
     } catch (error: any) {
-      console.error('Error al crear reseña:', error);
-
-      if (error.message === 'NOT_ATTENDEE') {
-        return res.status(403).json({ error: 'No puedes reseñar un evento al que no asististe' });
-      }
-      if (error.message === 'NOT_CHECKED_IN') {
-        return res.status(403).json({ error: 'Debes haber hecho check-in para dejar una reseña' });
-      }
-      if (error.message === 'ALREADY_REVIEWED') {
-        return res.status(400).json({ error: 'Ya dejaste una reseña para este evento' });
-      }
-
+      if (error.message === 'NOT_ATTENDEE') return res.status(403).json({ error: 'No puedes reseñar un evento al que no asististe' });
+      if (error.message === 'NOT_CHECKED_IN') return res.status(403).json({ error: 'Debes haber hecho check-in para dejar una reseña' });
+      if (error.message === 'ALREADY_REVIEWED') return res.status(400).json({ error: 'Ya dejaste una reseña para este evento' });
       res.status(500).json({ error: 'Error al crear la reseña' });
     }
   }
 
-  /**
-   * Obtiene las reseñas de un evento
-   */
   static async getEventReviews(req: Request, res: Response) {
     try {
-      const { eventId } = req.params;
-      const reviews = await EventService.getEventReviews(parseInt(eventId));
-
-      res.status(200).json({
-        success: true,
-        data: reviews,
-      });
+      const reviews = await EventReviewsService.getEventReviews(parseInt(req.params.eventId));
+      res.status(200).json({ success: true, data: reviews });
     } catch (error) {
-      console.error('Error al obtener reseñas:', error);
       res.status(500).json({ error: 'Error al obtener las reseñas' });
     }
   }
 
-  /**
-   * Permite al organizador responder a una reseña
-   */
   static async respondToReview(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const { eventId, reviewId } = req.params;
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
       const { response } = req.body;
-      const userId = req.user.id;
+      if (!response || typeof response !== 'string' || response.trim().length === 0) return res.status(400).json({ error: 'La respuesta es requerida' });
+      if (response.length > 1000) return res.status(400).json({ error: 'La respuesta no puede exceder 1000 caracteres' });
 
-      if (!response || typeof response !== 'string' || response.trim().length === 0) {
-        return res.status(400).json({ error: 'La respuesta es requerida' });
-      }
-
-      if (response.length > 1000) {
-        return res.status(400).json({ error: 'La respuesta no puede exceder 1000 caracteres' });
-      }
-
-      const updatedReview = await EventService.respondToReview(
-        parseInt(eventId),
-        parseInt(reviewId),
-        userId,
-        response
-      );
-
-      res.status(200).json({
-        success: true,
-        message: 'Respuesta agregada exitosamente',
-        data: updatedReview,
-      });
+      const updatedReview = await EventReviewsService.respondToReview(parseInt(req.params.eventId), parseInt(req.params.reviewId), req.user.id, response);
+      res.status(200).json({ success: true, message: 'Respuesta agregada exitosamente', data: updatedReview });
     } catch (error: any) {
-      console.error('Error al responder reseña:', error);
-
-      if (error.message === 'EVENT_NOT_FOUND') {
-        return res.status(404).json({ error: 'Evento no encontrado' });
-      }
-      if (error.message === 'FORBIDDEN') {
-        return res.status(403).json({ error: 'Solo el organizador puede responder reseñas' });
-      }
-      if (error.message === 'REVIEW_NOT_FOUND') {
-        return res.status(404).json({ error: 'Reseña no encontrada' });
-      }
-
+      if (error.message === 'EVENT_NOT_FOUND') return res.status(404).json({ error: 'Evento no encontrado' });
+      if (error.message === 'FORBIDDEN') return res.status(403).json({ error: 'Solo el organizador puede responder reseñas' });
+      if (error.message === 'REVIEW_NOT_FOUND') return res.status(404).json({ error: 'Reseña no encontrada' });
       res.status(500).json({ error: 'Error al responder la reseña' });
     }
   }
 
-  // ========== HISTORIAL DE ASISTENCIA ==========
-
-  /**
-   * Obtiene los eventos donde el usuario está registrado (próximos)
-   */
   static async getRegisteredEvents(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const userId = req.user.id;
-      const events = await EventService.getRegisteredEvents(userId);
-
-      // Formatear eventos para el frontend
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const events = await EventReviewsService.getRegisteredEvents(req.user.id);
       const formattedEvents = events.map((event: any) => ({
         ...event,
         organizer: event.organizer ? {
@@ -1099,30 +396,16 @@ class EventController {
           avatar: event.organizer.profileImageUrl || '/images/default-avatar.png',
         } : null,
       }));
-
-      res.status(200).json({
-        success: true,
-        data: formattedEvents,
-      });
+      res.status(200).json({ success: true, data: formattedEvents });
     } catch (error) {
-      console.error('Error al obtener eventos registrados:', error);
       res.status(500).json({ error: 'Error al obtener los eventos registrados' });
     }
   }
 
-  /**
-   * Obtiene los eventos a los que el usuario asistió
-   */
   static async getAttendedEvents(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
-      const userId = req.user.id;
-      const events = await EventService.getAttendedEvents(userId);
-
-      // Formatear eventos para el frontend
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
+      const events = await EventReviewsService.getAttendedEvents(req.user.id);
       const formattedEvents = events.map((event: any) => ({
         ...event,
         organizer: event.organizer ? {
@@ -1131,50 +414,24 @@ class EventController {
           avatar: event.organizer.profileImageUrl || '/images/default-avatar.png',
         } : null,
       }));
-
-      res.status(200).json({
-        success: true,
-        data: formattedEvents,
-      });
+      res.status(200).json({ success: true, data: formattedEvents });
     } catch (error) {
-      console.error('Error al obtener historial de asistencia:', error);
       res.status(500).json({ error: 'Error al obtener el historial de asistencia' });
     }
   }
 
-  // ========== CERTIFICADOS ==========
-
-  /**
-   * Genera el certificado de asistencia en PDF
-   */
   static async generateCertificate(req: Request, res: Response) {
     try {
-      if (!req.user) {
-        return res.status(401).json({ error: 'No autorizado' });
-      }
-
+      if (!req.user) return res.status(401).json({ error: 'No autorizado' });
       const { eventId } = req.params;
       const userId = req.user.id;
-      const format = req.query.format as string; // 'pdf' o 'json'
+      const format = req.query.format as string;
 
-      // Obtener datos del certificado
-      const certificateData = await EventService.generateCertificate(parseInt(eventId), userId);
+      const certificateData = await EventReviewsService.generateCertificate(parseInt(eventId), userId);
 
-      // Si se solicita JSON, retornar datos
-      if (format === 'json') {
-        return res.status(200).json({
-          success: true,
-          data: certificateData,
-        });
-      }
+      if (format === 'json') return res.status(200).json({ success: true, data: certificateData });
 
-      // Generar código único
-      const certificateCode = CertificateService.generateCertificateCode(
-        parseInt(eventId),
-        userId
-      );
-
-      // Generar PDF
+      const certificateCode = CertificateService.generateCertificateCode(parseInt(eventId), userId);
       const pdfBuffer = await CertificateService.generatePDF({
         eventId: parseInt(eventId),
         eventTitle: certificateData.eventTitle,
@@ -1187,27 +444,15 @@ class EventController {
         certificateCode,
       });
 
-      // Configurar headers para descarga de PDF
       const filename = `certificado-${certificateData.eventTitle.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}.pdf`;
-
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       res.setHeader('Content-Length', pdfBuffer.length);
-
       return res.send(pdfBuffer);
     } catch (error: any) {
-      console.error('Error al generar certificado:', error);
-
-      if (error.message === 'NOT_ATTENDEE') {
-        return res.status(403).json({ error: 'No asististe a este evento' });
-      }
-      if (error.message === 'NOT_APPROVED') {
-        return res.status(403).json({ error: 'Tu registro no fue aprobado' });
-      }
-      if (error.message === 'NOT_CHECKED_IN') {
-        return res.status(403).json({ error: 'No hiciste check-in en este evento' });
-      }
-
+      if (error.message === 'NOT_ATTENDEE') return res.status(403).json({ error: 'No asististe a este evento' });
+      if (error.message === 'NOT_APPROVED') return res.status(403).json({ error: 'Tu registro no fue aprobado' });
+      if (error.message === 'NOT_CHECKED_IN') return res.status(403).json({ error: 'No hiciste check-in en este evento' });
       res.status(500).json({ error: 'Error al generar el certificado' });
     }
   }

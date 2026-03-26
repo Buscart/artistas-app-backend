@@ -1,6 +1,6 @@
 import { db } from '../db.js';
 import { and, eq, gte, lte, or, sql, desc, inArray, ilike, isNull } from 'drizzle-orm';
-import { users, artists, events, venues, services, artworks, categories, highlightPhotos } from '../schema/index.js';
+import { users, artists, events, venues, services, artworks, categories, disciplines, roles, highlightPhotos } from '../schema/index.js';
 
 // DTOs para tipado seguro
 export interface ExplorerFilters {
@@ -137,11 +137,15 @@ class ExplorerService {
           artistName: artists.artistName,
           stageName: artists.stageName,
           categoryId: artists.categoryId,
+          disciplineId: artists.disciplineId,
+          roleId: artists.roleId,
           tags: artists.tags,
           pricePerHour: artists.pricePerHour,
           baseCity: artists.baseCity,
           yearsOfExperience: artists.yearsOfExperience,
           artistType: artists.artistType,
+          presentationType: artists.presentationType,
+          serviceTypes: artists.serviceTypes,
           travelAvailability: artists.travelAvailability,
           travelDistance: artists.travelDistance,
           hourlyRate: artists.hourlyRate,
@@ -149,18 +153,56 @@ class ExplorerService {
           priceRange: artists.priceRange,
           availability: artists.availability,
           languages: artists.languages,
+          licenses: artists.licenses,
+          certifications: artists.certifications,
+          education: artists.education,
+          workExperience: artists.workExperience,
+          linkedAccounts: artists.linkedAccounts,
+          description: artists.description,
+          portfolio: artists.portfolio,
+          gallery: artists.gallery,
+          videoPresentation: artists.videoPresentation,
         },
-        // Subquery para obtener fotos destacadas en una sola query
-        highlightPhotos: sql<(string[])>`(
+        categoryName: categories.name,
+        disciplineName: disciplines.name,
+        roleName: roles.name,
+        // Fotos destacadas
+        highlightPhotos: sql<string[]>`(
           SELECT COALESCE(array_agg(image_url ORDER BY position), ARRAY[]::text[])
-          FROM highlight_photos 
-          WHERE highlight_photos.user_id = users.id 
-          AND image_url IS NOT NULL 
+          FROM highlight_photos
+          WHERE highlight_photos.user_id = users.id
+          AND image_url IS NOT NULL
           LIMIT 4
         )`.as('highlightPhotos'),
+        // Servicios activos del artista
+        servicesData: sql<any[]>`(
+          SELECT COALESCE(
+            json_agg(json_build_object(
+              'id', s.id,
+              'name', s.name,
+              'description', s.description,
+              'price', s.price,
+              'currency', s.currency,
+              'duration', s.duration,
+              'category', s.category,
+              'icon', s.icon,
+              'deliveryTag', s.deliverytag,
+              'unit', s.unit,
+              'packageType', s.packagetype,
+              'images', s.images
+            ) ORDER BY s.created_at),
+            '[]'::json
+          )
+          FROM services s
+          WHERE s.user_id = users.id
+          AND s.is_active = true
+        )`.as('servicesData'),
       })
       .from(users)
       .leftJoin(artists, eq(users.id, artists.userId))
+      .leftJoin(categories, eq(artists.categoryId, categories.id))
+      .leftJoin(disciplines, eq(artists.disciplineId, disciplines.id))
+      .leftJoin(roles, eq(artists.roleId, roles.id))
       .where(whereCondition)
       .orderBy(
         filters.sortBy === 'price' ? artists.pricePerHour :

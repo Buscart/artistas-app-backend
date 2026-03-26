@@ -56,7 +56,7 @@ export const authController = {
       // Obtener información actualizada de Firebase
       let firebaseInfo;
       try {
-        firebaseInfo = await auth.getUser(firebaseUser._id);
+        firebaseInfo = await auth.getUser(firebaseUser.id);
       } catch (error) {
         console.error('Error al obtener información de Firebase:', error);
         return res.status(401).json({
@@ -70,14 +70,14 @@ export const authController = {
       const [existingUser] = await db
         .select()
         .from(users)
-        .where(eq(users.id, firebaseUser._id))
+        .where(eq(users.id, firebaseUser.id))
         .limit(1);
 
       let user = existingUser;
 
       // Si el usuario no existe, crearlo
       if (!existingUser) {
-        console.log(`Creando nuevo usuario en la base de datos: ${firebaseUser._id}`);
+        console.log(`Creando nuevo usuario en la base de datos: ${firebaseUser.id}`);
         
         try {
           // Preparar datos del usuario
@@ -90,7 +90,7 @@ export const authController = {
           const result = await db
             .insert(users)
             .values({
-              id: firebaseUser._id,
+              id: firebaseUser.id,
               email: email,
               firstName: firstName,
               lastName: lastName,

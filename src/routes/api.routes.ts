@@ -689,4 +689,8 @@ v1.use(protectedRoutes);
 // Usar rutas de la API v1 con prefijo /api/v1 (único punto de entrada)
 router.use('/v1', v1);
 
+// Rutas de administración (sin prefijo v1 para facilitar acceso desde admin panel)
+import adminRoutes from '../routes/admin.routes.js';
+router.use('/admin', adminRoutes);
+
 export default router;

@@ -19,6 +19,7 @@
     "db:add-indices": "tsx scripts/add-indices.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed:artists": "tsx scripts/seed-artists.ts",
+    "db:seed:hierarchy": "tsx scripts/seed-hierarchy.ts",
     "clear-artists": "tsx scripts/clear-artists-preview.ts",
     "clear-artists-confirm": "tsx scripts/clear-artists-confirm.ts",
     "clear-artists-complete": "tsx scripts/clear-artists-complete.ts",
